@@ -7,7 +7,8 @@ no likes.
 ## Stack
 - Single index.html
 - Leaflet.js for the map
-- Supabase JS for the backend (database + realtime)
+- Supabase JS for the backend (database only — realtime subscriptions
+  removed in favor of 30s polling; see Supabase section below)
 - MyMemory API for translation (free, CORS, no signup — see Translation
   section below)
 - localStorage for one-dot-per-day client check
@@ -49,11 +50,17 @@ no likes.
 - Project URL: https://sxofvadbeznwgctdzbmk.supabase.co
 - Publishable key is hardcoded in index.html (safe — RLS protects writes)
 - Table: messages (id, text, lat, lng, loc, mood, created_at, view_count, continent)
-- RLS: anyone can read, anyone can insert. UPDATE is NOT permitted directly;
-  view-count bumps go through the `increment_message_view_count(uuid)` RPC
-  (SECURITY DEFINER) so we don't have to open up arbitrary updates.
-- Realtime is enabled on the messages table — both INSERT and UPDATE events
-  are consumed by the client.
+  — note: `view_count` is no longer read or written by the client (see Heard
+  Around the World panel below). The column and the
+  `increment_message_view_count(uuid)` RPC remain in the schema as historical
+  artifacts; they can stay or be dropped without affecting the app.
+- RLS: anyone can read, anyone can insert. UPDATE is NOT permitted directly.
+- **Polling, not realtime.** All Supabase realtime websocket subscriptions
+  were removed to control egress on free tier. The map is refreshed by a
+  30-second incremental SELECT (see `POLL_INTERVAL_MS` and the polling
+  cursor in `index.html`, around line 6410). New dots appear within 30s of
+  insert instead of arriving instantly. Trade-off accepted in exchange for
+  ~zero realtime quota usage and predictable scaling.
 
 ### One-time migration SQL (run in Supabase SQL editor)
 ```sql
@@ -114,10 +121,10 @@ midnight UTC.
   `messages` and `flare_responses` inserts) plus schema additions to both
   tables. Tracked as PR-2; do not pretend the current build enforces this.
 
-### Realtime
-- INSERT on `flares` and INSERT on `flare_responses` are consumed by the
-  client. There is no UPDATE event for responses now that they live in
-  their own table.
+### Updates
+- Flares and responses are picked up by the same 30-second polling loop
+  that handles dots — there are no realtime subscriptions on these tables
+  either. New flares and incoming responses appear within 30s.
 
 ### Visual identity
 - Triangle markers (vs dots), amber `#ff9e3d` color.
@@ -164,7 +171,6 @@ create policy "anyone can insert flare responses" on flare_responses
 alter table flare_responses
   add constraint flare_responses_one_per_flare unique (flare_id);
 ```
-Enable Realtime on `flares` and `flare_responses` in Database → Replication.
 
 ### Visual identity
 - Triangle markers (vs dots), amber `#ff9e3d` color.
@@ -176,8 +182,17 @@ Enable Realtime on `flares` and `flare_responses` in Database → Replication.
 - Console: `resetMyFlare()` clears today's flare lock.
 
 ## Heard Around the World panel
-- Bottom-left frosted-glass card listing the most-viewed dot per continent
-  today (up to 6 rows, sorted by view_count desc).
+- Bottom-left frosted-glass card showing a rotating selection of dots,
+  sampled with a **random-weighted-recent** algorithm (newer dots more
+  likely to be surfaced, but every dot keeps a real chance). Re-rolls
+  every 30s (`HW_ROTATE_MS`).
+- Pool: most-recent 30 dots per continent (`HW_CANDIDATE_POOL`), up to 7
+  rows displayed (`HW_MAX_ROWS`).
+- Replaced the previous "most-viewed dot per continent" model — that
+  required a `view_count` UPDATE realtime broadcast on every popup open,
+  which was the dominant source of realtime quota burn. Random-weighted-
+  recent is purely client-side: zero database round-trips, zero realtime
+  traffic.
 - Continent is derived in `continentFromLatLng()` (bbox cascade — no API).
   Stored on insert; client-side fallback handles older rows where the column
   is NULL.
