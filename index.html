@@ -2758,23 +2758,42 @@ function escapeHtml(s) {
   }[c]));
 }
 
-// ───────────── PROFANITY FILTER ─────────────
-// Light-touch sanitization on the WRITE path only. Targets slurs and hate
-// terms — racial/ethnic, homophobic, transphobic, dehumanizing — across the
-// languages most active on the map (en/es/pt/ru). Ordinary profanity ("shit",
-// "damn", "fuck") is intentionally NOT in this list — dropadot is about
-// authentic human expression and emotional swearing is part of that.
+// ───────────── CONTENT FILTER ─────────────
+// Three layers, all on the WRITE path only:
 //
-// Detection runs on a leetspeak-normalized copy of the input (3→e, 0→o, 1→i,
-// @→a, $→s, !→i — all 1-to-1 character swaps so indices align with the
-// original) and matches with Unicode-aware word boundaries (works for Latin
-// AND Cyrillic). When a slur is matched, ONLY that word is replaced with
-// "***" — the surrounding message survives untouched.
+//   1) `HATE_SYMBOLS` — Unicode characters (swastikas, runes used by hate
+//      groups, etc.) that block the entire insert outright. No redaction —
+//      a single matching codepoint is enough to reject the message.
+//   2) `HATE_PHRASES` — multi-word patterns (Nazi/genocidal phrases, the
+//      "kill all <group>" / "death to <group>" templates, neo-numeric
+//      codes like 1488). Also block-outright; not redactable safely.
+//   3) `PROFANITY_LIST` — single-word slurs (racial/ethnic, homophobic,
+//      transphobic, dehumanizing) across en/es/pt/ru. Light-touch:
+//      replaces ONLY the matched word with "***", letting the surrounding
+//      message survive. Ordinary profanity ("shit", "damn", "fuck") is
+//      intentionally NOT in this list — dropadot is about authentic
+//      human expression and emotional swearing is part of that.
 //
-// To extend: add entries (lowercase, base form) below. An optional trailing
-// "s" is matched automatically for English plurals. The allowlist exists for
-// benign words that legitimately contain a slur substring at a word boundary
-// (Niger the country, Nigerian, etc.) — extend if a false positive surfaces.
+// Detection for layers 2 & 3 runs on a leetspeak-normalized copy of the
+// input (3→e, 0→o, 1→i, 4→a, @→a, $→s, !→i — all 1-to-1 character swaps
+// so indices align with the original) and uses Unicode-aware word
+// boundaries via lookarounds (works for Latin AND Cyrillic).
+//
+// To extend: add entries below. The PROFANITY_ALLOWLIST exists for
+// benign words that legitimately contain a slur substring at a word
+// boundary (Niger the country, Nigerian, etc.).
+
+// Layer 1: hate symbols (codepoint-level block).
+const HATE_SYMBOLS = new Set([
+  "卐", // 卐 swastika (CJK)
+  "卍", // 卍 swastika (CJK, mirror)
+  "࿕", // ࿕ Tibetan right-facing svasti
+  "࿖", // ࿖ Tibetan left-facing svasti
+  "࿗", // ࿗ Tibetan right-facing svasti with dots
+  "࿘", // ࿘ Tibetan left-facing svasti with dots
+  "ᛋ", // ᛋ runic Sigel (single — appropriated)
+  "✠"  // ✠ Maltese cross / iron cross (appropriated)
+]);
 
 const PROFANITY_LIST = [
   // English — racial / ethnic
@@ -2797,13 +2816,58 @@ const PROFANITY_LIST = [
 // even if a regex would otherwise match. Lowercased, exact word match.
 const PROFANITY_ALLOWLIST = new Set([
   "niger", "nigerian", "nigerien", "nigeria",
-  "scunthorpe", "classic", "passage",
+  "scunthorpe", "passage",
   "faggio"  // legit Italian word / surname
 ]);
 
 // 1-to-1 leetspeak swaps applied during detection only. Keeping it short on
 // purpose — the goal is catching casual evasion, not fighting an arms race.
 const _LEET_SWAP = { "3": "e", "0": "o", "1": "i", "4": "a", "@": "a", "$": "s", "!": "i" };
+
+// Shared lowercase + leetspeak normalizer. Used by both the phrase block
+// (layer 2) and the slur sanitizer (layer 3) so both layers see the same
+// evasion-resistant view of the input.
+function _leetNormalize(text) {
+  let out = "";
+  for (const ch of (text || "").toLowerCase()) out += _LEET_SWAP[ch] || ch;
+  return out;
+}
+
+// Layer 2: hate phrases. Patterns match against the leet-normalized form
+// of the input (so "h31l h1tl3r" hits the same regex as "heil hitler").
+// For neo-numeric codes like 1488, the leet pass turns "1488" into "ia88"
+// — encode the regex against the normalized form and add a comment.
+//
+// The `<group>` slot expands to a list of commonly-targeted demographic
+// terms; extend `_HATE_GROUPS` to broaden coverage. Word boundaries via
+// the same Unicode lookarounds the slur regex uses.
+const _HATE_GROUPS_SRC = "(?:jews?|blacks?|whites?|muslims?|gays?|trans|lesbians?|latinos?|latinas?|asians?|hispanics?|africans?|arabs?|christians?|hindus?|immigrants?|refugees?)";
+const _HATE_BOUNDARY_L = "(?<![\\p{L}\\p{N}_])";
+const _HATE_BOUNDARY_R = "(?![\\p{L}\\p{N}_])";
+const HATE_PHRASES = [
+  // Nazi salutes / mottos
+  /heil\s+hitler/iu,
+  /sieg\s+heil/iu,
+  /seig\s+heil/iu,            // common misspell
+  /white\s+power/iu,
+  // KKK as a standalone token
+  new RegExp(`${_HATE_BOUNDARY_L}kkk${_HATE_BOUNDARY_R}`, "iu"),
+  // 14/88 and 1488 — neo-numeric. After leet-normalize, 1→i and 4→a, so
+  // "1488" becomes "ia88" and "14/88" becomes "ia/88". 8 is not in the
+  // leet map. Pattern matches both, with optional separator `/  -  _  space`.
+  new RegExp(`${_HATE_BOUNDARY_L}ia[\\/\\-_\\s]?88${_HATE_BOUNDARY_R}`, "iu"),
+  // Genocidal templates against demographic groups. Optional "the" so
+  // "kill all the jews" matches alongside "kill all jews".
+  new RegExp(`kill\\s+all\\s+(?:the\\s+)?${_HATE_GROUPS_SRC}`, "iu"),
+  new RegExp(`death\\s+to\\s+(?:the\\s+)?${_HATE_GROUPS_SRC}`, "iu"),
+  new RegExp(`${_HATE_GROUPS_SRC}\\s+should\\s+(?:all\\s+)?die`, "iu"),
+  new RegExp(`gas\\s+the\\s+${_HATE_GROUPS_SRC}`, "iu"),
+  // Doubled SS rune (Schutzstaffel). Single ᛋ is in HATE_SYMBOLS, but the
+  // doubled form is a more deliberate signal so it lands here too as a
+  // belt-and-suspenders guard against any future single-rune false-positive
+  // softening.
+  /ᛋᛋ/u
+];
 
 // Pre-build one Unicode-aware regex per slur entry, with optional trailing "s"
 // for plural forms. Word boundaries via lookarounds against any letter/digit/
@@ -2813,13 +2877,40 @@ const _PROFANITY_REGEXES = PROFANITY_LIST.map(w => {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}s?(?![\\p{L}\\p{N}_])`, "giu");
 });
 
+// Layer 1 check. Single matching codepoint blocks the entire insert.
+function containsHateSymbol(text) {
+  if (!text || typeof text !== "string") return false;
+  for (const ch of text) {
+    if (HATE_SYMBOLS.has(ch)) return true;
+  }
+  return false;
+}
+
+// Layer 2 check. Returns true if any phrase pattern fires against the
+// leet-normalized input.
+function containsHatePhrase(text) {
+  if (!text || typeof text !== "string") return false;
+  const norm = _leetNormalize(text);
+  return HATE_PHRASES.some(re => { re.lastIndex = 0; return re.test(norm); });
+}
+
+// Combined block-or-pass gate for inserts. Returns null on pass, or a
+// user-facing error string on block. Callers also call `sanitizeProfanity`
+// AFTER this returns null, to redact any single-word slurs that survived
+// the block layers. The rejection text is intentionally vague — naming the
+// match would just teach evaders what to obfuscate.
+function checkContentBlocks(text) {
+  if (containsHateSymbol(text)) return "This message can't be posted.";
+  if (containsHatePhrase(text)) return "This message can't be posted.";
+  return null;
+}
+
 function sanitizeProfanity(text) {
   if (!text || typeof text !== "string") return text;
   // Build a lowercased + leet-normalized copy. Char count stays identical to
   // the original since every leet swap is single-char-to-single-char, so any
   // match index from the normalized form maps 1:1 back into the original.
-  let lowered = "";
-  for (const ch of text.toLowerCase()) lowered += _LEET_SWAP[ch] || ch;
+  const lowered = _leetNormalize(text);
 
   // Collect [start, end) ranges to redact, then apply once at the end so we
   // don't shift indices mid-loop.
@@ -4668,6 +4759,13 @@ async function submit() {
     showComposeError("links aren't allowed here. plain text and feelings only.");
     return;
   }
+  // Hate-symbol + hate-phrase block. Runs before sanitizeProfanity (which
+  // only redacts single-word slurs). The error text is intentionally vague.
+  const blocked = checkContentBlocks(text);
+  if (blocked) {
+    showComposeError(blocked);
+    return;
+  }
   if (hasDroppedToday()) { closeCompose(false); return; }
 
   const ll = pendingLatLng;
@@ -5749,6 +5847,16 @@ function buildFlarePopup(flare) {
 // (the respond UI is only rendered when sameContinent is true) and the
 // duplicate-by-same-device check uses planter_id.
 async function respondToFlare(flareId, text, errEl) {
+  // Hate-symbol + hate-phrase block. Mirrors the dot/flare composer gate;
+  // the slur sanitizer below still redacts single-word slurs separately.
+  const blocked = checkContentBlocks(text);
+  if (blocked) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = blocked;
+    }
+    return false;
+  }
   try {
     const { data, error } = await sb
       .from("flare_responses")
@@ -5841,6 +5949,12 @@ async function submitFlare() {
   if (!text || text.length > 280 || !pendingFlareLatLng) return;
   if (URL_RE.test(text)) {
     showFlareError("links aren't allowed here. plain text only.");
+    return;
+  }
+  // Hate-symbol + hate-phrase block. Same gate as the dot composer.
+  const blocked = checkContentBlocks(text);
+  if (blocked) {
+    showFlareError(blocked);
     return;
   }
   if (hasShotFlareToday()) { closeFlareCompose(); return; }
