@@ -16,8 +16,11 @@ no likes.
 - Backend is **MyMemory** (`https://api.mymemory.translated.net/get`).
   CORS-enabled, called directly from the browser. No API key, no secret,
   no Edge Function, no server-side component.
-- Per-IP rate limit: **5,000 chars/day per visitor**. Quota is per-user,
-  not app-wide, so scale is not a concern.
+- Each request includes `&de=hello@dropadot.world` (the
+  `MYMEMORY_CONTACT` constant), which raises the per-IP daily limit from
+  5,000 to **50,000 chars/day per visitor**. Free tier, no signup —
+  MyMemory just wants a contact email for high-usage IPs.
+- Quota is per-user, not app-wide, so scale is not a concern.
 - 500-byte limit per request — fine for individual dropadot messages
   (text column is capped at 280 chars).
 - Response shape: `{ responseStatus: 200, responseData: { translatedText: "..." } }`.

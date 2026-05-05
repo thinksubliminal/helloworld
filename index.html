@@ -5063,18 +5063,21 @@ function getTranslatedNow(text, targetLang) {
   return translatedSync.get(`${targetLang}::${text}`) || null;
 }
 // Translation backend: MyMemory (https://mymemory.translated.net).
-// Free, CORS-enabled, no signup, no API key. Per-IP rate limit is 5,000
-// chars/day per visitor — quota is per-user, not app-wide. 500-byte limit
-// per request, fine for individual dropadot messages.
+// Free, CORS-enabled, no signup, no API key. Identifying with an email via
+// the `de` param raises the per-IP daily limit from 5,000 to 50,000 chars.
+// Quota is per-visitor, not app-wide. 500-byte limit per request, fine for
+// individual dropadot messages.
 // Source defaults to "Autodetect" — MyMemory's documented pseudo-code that
 // triggers server-side language detection. Real ISO codes (e.g. "es") still
 // work if a caller wants to assert the source explicitly.
 const MYMEMORY_ENDPOINT = "https://api.mymemory.translated.net/get";
+const MYMEMORY_CONTACT = "hello@dropadot.world";
 const DEFAULT_SOURCE_LANG = "Autodetect";
 
 async function fetchMyMemory(text, targetLang, sourceLang) {
   const url = `${MYMEMORY_ENDPOINT}?q=${encodeURIComponent(text)}`
-    + `&langpair=${encodeURIComponent(sourceLang + "|" + targetLang)}`;
+    + `&langpair=${encodeURIComponent(sourceLang + "|" + targetLang)}`
+    + `&de=${encodeURIComponent(MYMEMORY_CONTACT)}`;
   const r = await fetch(url);
   if (!r.ok) throw new Error("HTTP " + r.status);
   const data = await r.json();
