@@ -5501,14 +5501,50 @@ function addFlareMarker(flare) {
   });
   // Mobile-only pan-before-open. We want the flare to land at ~65% down
   // the screen so the popup has room to open above it without covering
-  // the marker. Compute the new center by projecting the flare to its
-  // current pixel position and shifting the center up by 15% of the
-  // viewport height (65% target − 50% screen-center = 15%). Desktop
-  // opens immediately, no movement. Second-click toggle-close is preserved.
+  // the marker. Desktop opens immediately, no movement. Second-click
+  // toggle-close is preserved.
+  //
+  // Two paths, each a SINGLE animation (no land-then-shift wobble):
+  //
+  //   • Zoom < FLARE_TAP_MIN_ZOOM: project the flare to world-pixel
+  //     coords AT THE TARGET ZOOM, shift up by 15% of viewport height,
+  //     unproject back to a latLng, and flyTo that composed center at
+  //     the target zoom. Zoom and offset happen together in one
+  //     motion. Required because at very low zoom the map's `maxBounds`
+  //     clamps vertical panning (poles can't reveal void), which
+  //     would otherwise swallow the offset pan entirely and leave the
+  //     popup clipped.
+  //
+  //   • Zoom >= FLARE_TAP_MIN_ZOOM: current zoom's projection is fine,
+  //     so a plain panTo to the in-zoom offset center settles in one
+  //     motion. Faster duration (0.35s vs 0.5s) since no zoom change.
+  //
+  // The `moveend` listener registered after the call fires when the
+  // animation completes for either path, opening the popup.
+  const FLARE_TAP_MIN_ZOOM = 5;
   m.off("click").on("click", () => {
     if (m.isPopupOpen()) { m.closePopup(); return; }
-    if (window.innerWidth < 768) {
-      const size = map.getSize();
+    if (window.innerWidth >= 768) {
+      m.openPopup();
+      return;
+    }
+
+    const size = map.getSize();
+
+    if (map.getZoom() < FLARE_TAP_MIN_ZOOM) {
+      // Combined zoom + offset, single flyTo. project()/unproject()
+      // take an explicit zoom so the math is computed in the target
+      // zoom's pixel space, not the current one.
+      const flareWorld = map.project([flare.lat, flare.lng], FLARE_TAP_MIN_ZOOM);
+      const targetCenter = map.unproject(
+        L.point(flareWorld.x, flareWorld.y - size.y * 0.15),
+        FLARE_TAP_MIN_ZOOM
+      );
+      map.flyTo(targetCenter, FLARE_TAP_MIN_ZOOM, {
+        duration: 0.5,
+        easeLinearity: 0.25
+      });
+    } else {
       const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
       const targetCenter = map.containerPointToLatLng(
         L.point(flarePoint.x, flarePoint.y - size.y * 0.15)
@@ -5518,10 +5554,9 @@ function addFlareMarker(flare) {
         duration: 0.35,
         easeLinearity: 0.25
       });
-      map.once("moveend", () => m.openPopup());
-    } else {
-      m.openPopup();
     }
+
+    map.once("moveend", () => m.openPopup());
   });
 
   if (IS_HOVER_DEVICE && flare.text) {
