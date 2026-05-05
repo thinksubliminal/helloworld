@@ -25,3 +25,4 @@ node_modules/
 
 # private notes (never push)
 pending_audit.md
+WORKFLOW.md
