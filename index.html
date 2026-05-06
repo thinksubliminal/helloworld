@@ -3425,33 +3425,16 @@ const DotCanvas = L.Layer.extend({
     // chosen dot still feels alive.
     const isChosen = !!(currentChestClaim && currentChestClaim.dot_id === d.id);
 
-    // For the chosen dot: pre-compute the emoji's visual-center offset
-    // so the pulse halo and the emoji share one true center. Apple Color
-    // Emoji glyphs don't sit symmetrically in their EM box, so we have
-    // to measure the actual bounding box at the current font size and
-    // shift draws by (dx, dy). Computed once here, used by both the
-    // halo (below) and the fillText (further down).
-    let chosenDx = 0, chosenDy = 0, chosenEmoji = "";
-    if (isChosen) {
-      const mood = MOOD_BY_ID[currentChestClaim.mood];
-      chosenEmoji = (mood && mood.emoji) || "✨";
-      ctx.save();
-      ctx.font = `${Math.round(CHEST_ICON_PX * s)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const m = ctx.measureText(chosenEmoji);
-      chosenDx = ((m.actualBoundingBoxLeft   || 0) - (m.actualBoundingBoxRight  || 0)) / 2;
-      chosenDy = ((m.actualBoundingBoxAscent || 0) - (m.actualBoundingBoxDescent || 0)) / 2;
-      ctx.restore();
-    }
-
     // 1) Pulse ring (drawn first; sits behind the dot in source order).
-    // For the chosen dot, the halo center is shifted by (chosenDx,
-    // chosenDy) so it stays locked to the emoji's true visual center
-    // instead of the EM-box center — otherwise the pulse ring drifts
-    // upper-left while the glowing emoji stays put. Halo radius is
-    // tied to CHEST_ICON_PX (instead of the regular dot's ~5.5px
-    // radius) so the ring originates outside the emoji edge.
+    // Both the chosen-dot emoji and the halo are drawn at exactly (x, y)
+    // with no offset compensation. Earlier versions tried to measure the
+    // emoji's actual bounding box and shift draws by (dx, dy) to put the
+    // visual ink center at (x, y), but measureText returns inconsistent
+    // values across browsers/emoji fonts, and the compensation actually
+    // drifted the halo away from the emoji. Drawing both at the same
+    // coordinate guarantees a shared center; any asymmetry inside the
+    // glyph itself is small enough to ignore. Halo radius is tied to
+    // CHEST_ICON_PX so the ring originates outside the emoji edge.
     if (pulseAlpha > 0.01) {
       ctx.save();
       ctx.globalAlpha = a * pulseAlpha;
@@ -3461,9 +3444,7 @@ const DotCanvas = L.Layer.extend({
       const haloR = isChosen
         ? (CHEST_ICON_PX * 0.55 + CHEST_ICON_PX * 0.15 * pulseScale) * s
         : (r + 3) * pulseScale;
-      const haloX = isChosen ? x + chosenDx : x;
-      const haloY = isChosen ? y + chosenDy : y;
-      ctx.arc(haloX, haloY, haloR, 0, Math.PI * 2);
+      ctx.arc(x, y, haloR, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
@@ -3475,18 +3456,16 @@ const DotCanvas = L.Layer.extend({
       // still applies via `s` so the chosen dot grows on hover like any
       // other. We DON'T draw the "mine" ring or the colored fill here —
       // the emoji + glow is the sole visual signal.
+      const mood = MOOD_BY_ID[currentChestClaim.mood];
+      const emoji = (mood && mood.emoji) || "✨";
       ctx.save();
       ctx.globalAlpha = a;
       ctx.font = `${Math.round(CHEST_ICON_PX * s)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      // Single warm gold glow around the emoji. The wider/softer second
-      // pass that used to live here was removed — at low alpha it read
-      // as a separate ring with a slightly different color cast, which
-      // visually competed with the actual pulse ring above.
       ctx.shadowColor = "rgba(255, 215, 0, 0.85)";
       ctx.shadowBlur = 24;
-      ctx.fillText(chosenEmoji, x + chosenDx, y + chosenDy);
+      ctx.fillText(emoji, x, y);
       ctx.restore();
       return;
     }
