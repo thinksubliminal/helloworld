@@ -6571,7 +6571,7 @@ if (IS_DEV_MODE) {
   };
 }
 
-// ───────────── PING ─────────────
+// ───────────── CAST ─────────────
 // Casts: one-shot questions between two dots. Sender taps a "cast" button
 // inside another user's dot popup, writes a question, sends it. A gold
 // dashed line appears on the map connecting the two dots until the
@@ -6943,7 +6943,7 @@ function updateCastBtnState() {
   // Inject the cast icon SVG once. The svg constant is defined further
   // below in the file but at module-evaluation time it'll be hoisted-
   // available via const TDZ won't matter here because this IIFE runs
-  // top-to-bottom after PING section constants are evaluated.
+  // top-to-bottom after CAST section constants are evaluated.
   castBtn.innerHTML = CAST_TRIGGER_ICON;
   castBtn.addEventListener("click", (ev) => {
     if (!IS_CAST_ENABLED) return;
