@@ -3480,14 +3480,12 @@ const DotCanvas = L.Layer.extend({
       ctx.font = `${Math.round(CHEST_ICON_PX * s)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      // Single warm gold glow around the emoji. The wider/softer second
+      // pass that used to live here was removed — at low alpha it read
+      // as a separate ring with a slightly different color cast, which
+      // visually competed with the actual pulse ring above.
       ctx.shadowColor = "rgba(255, 215, 0, 0.85)";
       ctx.shadowBlur = 24;
-      ctx.fillText(chosenEmoji, x + chosenDx, y + chosenDy);
-      // Second pass with a wider, softer halo. Scaled with the emoji
-      // (~1.5× the inner blur) so the glow stays proportionally
-      // generous at the new size without over-dominating neighbors.
-      ctx.shadowColor = "rgba(255, 215, 0, 0.4)";
-      ctx.shadowBlur = 38;
       ctx.fillText(chosenEmoji, x + chosenDx, y + chosenDy);
       ctx.restore();
       return;
