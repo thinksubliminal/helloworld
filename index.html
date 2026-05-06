@@ -1233,6 +1233,9 @@
     justify-content: center;
   }
   .treasure-chest {
+    /* Width/height MUST match the JS constant `CHEST_ICON_PX`. The
+       canvas drawing of the chosen-dot mood emoji uses the same value
+       so the chest icon and its winning emoji share visual weight. */
     width: 20px;
     height: 20px;
     position: relative;
@@ -2239,9 +2242,15 @@ const BOTTLE_SVG = `<svg viewBox="0 0 246 566" xmlns="http://www.w3.org/2000/svg
 // Treasure-chest SVG, mirrored on the bottle's inlining pattern. The path
 // is unchanged from `assets/treasure-chest.svg` aside from swapping the
 // hardcoded `fill:white` for `fill="currentColor"` so the silhouette
-// color is CSS-driven. Square viewBox (372x365) — sized down to 20x20 by
-// the `.treasure-chest` rule so it sits at the same visual weight as the
-// bottle.
+// color is CSS-driven. Square viewBox (372x365) — sized down to
+// CHEST_ICON_PX × CHEST_ICON_PX by the `.treasure-chest` rule so it sits
+// at the same visual weight as the bottle.
+
+// Pixel size of the chest icon AND the chosen-dot mood emoji. Both share
+// this value so they stay visually matched. The CSS `.treasure-chest`
+// width/height must equal this constant — there is no live link from CSS
+// to JS, the two are kept in sync by convention.
+const CHEST_ICON_PX = 20;
 const TREASURE_CHEST_SVG = `<svg viewBox="0 0 365 304" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <g transform="matrix(1,0,0,1,-11.708333,-10.9375)">
     <g transform="matrix(1,0,0,1,-34,-88)">
@@ -3420,10 +3429,10 @@ const DotCanvas = L.Layer.extend({
     // Both the halo and the chosen-dot emoji are drawn at the same
     // (x, y) so the halo is centered on the emoji, not offset. For the
     // chosen dot the halo's radius is tied to the emoji's visual size
-    // (~13px radius for the 26 * s font) instead of the regular dot's
-    // ~5.5px radius — otherwise the smaller pulse formula would have
-    // the halo originate INSIDE the emoji and only emerge past its
-    // edge near the end of each cycle, reading as a misaligned bulge.
+    // (scales with CHEST_ICON_PX) instead of the regular dot's ~5.5px
+    // radius — otherwise the smaller pulse formula would have the halo
+    // originate INSIDE the emoji and only emerge past its edge near the
+    // end of each cycle, reading as a misaligned bulge.
     if (pulseAlpha > 0.01) {
       ctx.save();
       ctx.globalAlpha = a * pulseAlpha;
@@ -3431,7 +3440,7 @@ const DotCanvas = L.Layer.extend({
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       const haloR = isChosen
-        ? (14 + 4 * pulseScale) * s
+        ? (CHEST_ICON_PX * 0.55 + CHEST_ICON_PX * 0.15 * pulseScale) * s
         : (r + 3) * pulseScale;
       ctx.arc(x, y, haloR, 0, Math.PI * 2);
       ctx.stroke();
@@ -3440,17 +3449,16 @@ const DotCanvas = L.Layer.extend({
 
     if (isChosen) {
       // Render the mood emoji + gold glow in place of the dot circle.
-      // Sized noticeably larger than a regular dot (~11px footprint) to
-      // match the visual weight of the "world feels" mood breakdown row
-      // and signal "this one's special." Hover/popup-open scaling still
-      // applies via `s` so the chosen dot grows on hover like any other.
-      // We DON'T draw the "mine" ring or the colored fill here — the
-      // emoji + glow is the sole visual signal.
+      // Sized to match CHEST_ICON_PX so the chosen dot has the same
+      // visual weight as the chest icon itself. Hover/popup-open scaling
+      // still applies via `s` so the chosen dot grows on hover like any
+      // other. We DON'T draw the "mine" ring or the colored fill here —
+      // the emoji + glow is the sole visual signal.
       const mood = MOOD_BY_ID[currentChestClaim.mood];
       const emoji = (mood && mood.emoji) || "✨";
       ctx.save();
       ctx.globalAlpha = a;
-      ctx.font = `${Math.round(26 * s)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif`;
+      ctx.font = `${Math.round(CHEST_ICON_PX * s)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       // `textBaseline:"middle"` + `textAlign:"center"` anchors at the
