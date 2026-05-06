@@ -3150,9 +3150,21 @@ function continentBBox(lat, lng) {
   if (lat <= 12 && lat >= -10 && w >= 130 && w <= 175) return "Oceania";
   // South America
   if (lat <= 13 && lat >= -56 && w >= -82 && w <= -34) return "South America";
-  // North America (incl. Mexico, Caribbean, Greenland, Hawaii)
+  // North America (incl. Mexico, Caribbean, Hawaii — Greenland handled
+  // by the dedicated Greenland rule below since the western lng cutoff
+  // here (-50) excludes Greenlands eastern half).
   if (lat >= 13 && w >= -170 && w <= -50) return "North America";
   if (lat >= 7 && lat < 13 && w >= -85 && w <= -77) return "North America"; // Panama
+  // Iceland — carved out BEFORE the Greenland rule because their
+  // bboxes overlap (Iceland 63-67N, 25-13W sits inside the wider
+  // Greenland box). Iceland is conventionally Europe.
+  if (lat >= 63 && lat <= 67 && w >= -25 && w <= -13) return "Europe";
+  // Greenland + the Arctic Ocean immediately above it. Without this,
+  // those coords fall through every bbox and the nearestContinent
+  // fallback pulls them to Europe: at high latitudes cos(lat) shrinks
+  // longitude contributions, so Europe (52,15) ends up "closer" than
+  // North America (45,-100). Greenland is conventionally NA.
+  if (lat >= 60 && lat <= 90 && w >= -75 && w <= -10) return "North America";
   // Europe (rough — west of the Urals; northern Russia carved out)
   if (lat >= 36 && lat <= 72 && w >= -25 && w <= 45) return "Europe";
   if (lat >= 60 && lat <= 72 && w >= 45 && w <= 65) return "Europe";
