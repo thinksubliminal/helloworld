@@ -5982,17 +5982,61 @@ function addFlareMarker(flare) {
       return;
     }
 
-    // ── Desktop: openPopup unconditionally and let Leaflet's     ──
-    // ── autoPan ([20, 20] padding, set on bindPopup) nudge the  ──
-    // ── map subtly when the popup would clip the viewport. This ──
-    // ── is the same behavior dot popups use, and it produces a  ──
-    // ── consistent gentle adjustment at every zoom level — no   ──
-    // ── explicit zoom-jumps that read as "exaggerated" at some  ──
-    // ── zooms while feeling fine at others. Worst case at very  ──
-    // ── low zoom in a corner: popup may peek past one edge if   ──
-    // ── autoPan can't physically pan far enough; users can      ──
-    // ── manually zoom in if they want a tighter look.            ──
-    m.openPopup();
+    // ── Desktop: trust autoPan for the common case. Two specific ──
+    // ── situations fall back to an explicit smooth zoom + offset ──
+    // ── because autoPan physically cannot resolve them:          ──
+    // ──                                                           ──
+    // ──   1. Top-edge flares. Popups open above the marker, so   ──
+    // ──      a flare near the top wants the map to pan north to  ──
+    // ──      reveal its popup — but maxBoundsViscosity=1.0       ──
+    // ──      clamps the map at VERT_BOUND, autoPan returns zero  ──
+    // ──      movement, popup stays clipped. (Left/right have no  ──
+    // ──      analogous problem because worldCopyJump=true makes  ──
+    // ──      longitude wrap freely.)                              ──
+    // ──                                                           ──
+    // ──   2. Outer-corner flares at very low zoom. Popup is too  ──
+    // ──      big for autoPans max-shift to fit it. The user      ──
+    // ──      explicitly asked for a smooth zoom-in here.          ──
+    // ──                                                           ──
+    // ── Use setView (not flyTo) so the motion is a single ease,  ──
+    // ── no bounce/spring. A modest +0.5 zoom delta keeps the     ──
+    // ── motion gentle at higher starting zooms while still       ──
+    // ── giving enough vertical pan room at low zoom for the      ──
+    // ── 10% offset to actually take effect.                       ──
+    const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
+    const TOP_EDGE_PCT = 0.25;
+    const OUTER_CORNER_PCT = 0.18;
+    const SEVERE_LOW_ZOOM = 3.5;
+    const inTopEdge = flarePoint.y < size.y * TOP_EDGE_PCT;
+    const inOuterCorner =
+      flarePoint.x < size.x * OUTER_CORNER_PCT ||
+      flarePoint.x > size.x * (1 - OUTER_CORNER_PCT) ||
+      flarePoint.y < size.y * OUTER_CORNER_PCT ||
+      flarePoint.y > size.y * (1 - OUTER_CORNER_PCT);
+    const needsZoomIn =
+      (inTopEdge && map.getZoom() < FLARE_TAP_MIN_ZOOM) ||
+      (inOuterCorner && map.getZoom() < SEVERE_LOW_ZOOM);
+
+    if (!needsZoomIn) {
+      m.openPopup();
+      return;
+    }
+
+    // Always zoom IN (never out) by a modest 0.5 levels, with a
+    // floor at 4 so users at the deepest zoom-out still land
+    // somewhere a 280px popup fits. Project at the target zoom so
+    // zoom + offset land in one motion (no land-then-shift wobble).
+    const targetZoom = Math.max(map.getZoom() + 0.5, 4);
+    const flareWorld = map.project([flare.lat, flare.lng], targetZoom);
+    const targetCenter = map.unproject(
+      L.point(flareWorld.x, flareWorld.y - size.y * 0.10),
+      targetZoom
+    );
+    map.setView(targetCenter, targetZoom, {
+      animate: true,
+      duration: 0.45
+    });
+    map.once("moveend", () => m.openPopup());
   });
 
   if (IS_HOVER_DEVICE && flare.text) {
