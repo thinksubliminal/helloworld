@@ -6643,14 +6643,28 @@ const castLayer = L.layerGroup();
 // angle, dot position, or zoom level. Falls back to the raw centers when
 // the two dots are too close to leave room for the shorten on both
 // sides (degenerate case — line would invert otherwise).
+//
+// Antimeridian handling: when the two dots straddle ±180° longitude
+// (e.g., California to Tokyo), the naive lng difference is > 180 and
+// Leaflet draws the polyline the long way around the globe — across
+// Eurasia instead of across the Pacific — which reads as a bent /
+// two-segment line on the map. We detect this case and adjust one
+// endpoint's longitude by ±360 BEFORE projecting, so map.project()
+// puts both dots in the same world copy with the shortest pixel
+// distance between them. The unprojected result lands on a polyline
+// that crosses the antimeridian seamlessly as a straight line.
 function castEndpoints(sender, receiver) {
-  const pa = map.project([sender.lat, sender.lng]);
-  const pb = map.project([receiver.lat, receiver.lng]);
+  let sLng = sender.lng;
+  let rLng = receiver.lng;
+  if (rLng - sLng > 180)      rLng -= 360;
+  else if (sLng - rLng > 180) sLng -= 360;
+  const pa = map.project([sender.lat, sLng]);
+  const pb = map.project([receiver.lat, rLng]);
   const dx = pb.x - pa.x;
   const dy = pb.y - pa.y;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len <= CAST_LINE_SHORTEN_PX * 2) {
-    return [[sender.lat, sender.lng], [receiver.lat, receiver.lng]];
+    return [[sender.lat, sLng], [receiver.lat, rLng]];
   }
   const ux = dx / len;
   const uy = dy / len;
