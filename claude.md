@@ -9,9 +9,13 @@ no likes.
 - Leaflet.js for the map
 - Supabase JS for the backend (database only — realtime subscriptions
   removed in favor of 30s polling; see Supabase section below)
+- **Cloudflare Worker** in front of Supabase for the boot read path
+  (edge-cached aggregator at `dropadot-cache.thinksubliminal.workers.dev/loadAll`;
+  see Cloudflare Worker section)
 - MyMemory API for translation (free, CORS, no signup — see Translation
   section below)
-- localStorage for one-dot-per-day client check
+- localStorage for one-dot-per-day client check, language preference,
+  and personal-mute list
 
 ## Translation
 - Backend is **MyMemory** (`https://api.mymemory.translated.net/get`).
@@ -79,6 +83,34 @@ $$;
 
 GRANT EXECUTE ON FUNCTION increment_message_view_count(uuid) TO anon, authenticated;
 ```
+
+## Cloudflare Worker (edge cache for boot reads)
+- URL: `https://dropadot-cache.thinksubliminal.workers.dev/loadAll`
+- Hosted on Cloudflare Workers free tier (`*.workers.dev`, no DNS migration).
+  DNS for `dropadot.world` itself stays on Namecheap → GitHub Pages.
+- The Worker fires four parallel SELECTs on Supabase (messages, flares,
+  flare_responses, chest_claims) for today's window, bundles them into one
+  JSON response, and caches at the edge for **30 seconds** via
+  `Cache-Control: public, max-age=30` plus an explicit `caches.default.put`.
+- Goal: a viral-burst page-load surge (1000+ visitors in a window) collapses
+  into ~2 Supabase queries per minute total, instead of 3 per visitor.
+  Egress is the bottleneck on Supabase free tier (5 GB/mo); this pattern
+  caps it at "however much one cached snapshot weighs × cache misses/min".
+- Response includes `X-Cache: HIT` / `X-Cache: MISS` for debugging in the
+  browser network tab. `Cf-Cache-Status: HIT` on the Cloudflare side
+  confirms the response was served from CDN without invoking the Worker.
+- **Client falls back to direct Supabase reads** if the Worker is
+  unreachable or returns non-200 — see `WORKER_LOADALL_URL` and the bundle
+  pattern in `index.html` around line 6336. So the site degrades gracefully
+  if the Worker is down; visitors just lose the egress savings, not the
+  functionality.
+- Polling continues to hit Supabase directly (the polling endpoint is
+  per-client cursor and small per call). `chest_claims` boot read also
+  stays direct (single-row, narrow, not worth caching).
+- Worker code lives in the Cloudflare dashboard — not in this repo. The
+  full source is `dropadot-cache` on dash.cloudflare.com; if it ever needs
+  recreation, the canonical version was committed alongside the wiring
+  in `2032cd4 Wire boot path to Cloudflare Worker for cached loadAll`.
 
 ## Flares
 A second interaction type: a question/wish anchored to a continent. Only one
@@ -199,6 +231,63 @@ alter table flare_responses
 - Click a row → flyTo the dot and open its popup.
 - Mobile (<768px): collapses to a small list-icon toggle button.
 - Hidden entirely when there are no messages today.
+- **Muted dots are excluded from the candidate pool** — see Personal mute
+  section below.
+
+## Personal mute (eye icon on dot popups)
+- Tap the eye icon (top-right of any dot popup) → message text blurs,
+  eye toggles to closed. Tap again → unblurs, eye reopens. Pure visual
+  toggle, dot stays on the map either way.
+- **Local only.** Stored in `localStorage` under key `hw-muted-ids` as
+  a JSON array of message UUIDs. No Supabase column, no server state,
+  no record exists that anyone muted anything.
+- Other visitors are completely unaffected — they see the dot normally
+  in popups and in their own Heard panel rotation.
+- Muted IDs are also filtered out of the Heard Around the World pool so
+  the side panel respects the same gesture (`renderHeardPanel()` check).
+- Daily UTC midnight reset deletes the underlying messages, so any stale
+  IDs in the localStorage list become harmless dead weight (no cleanup
+  needed; the list naturally caps at "today's muted dots").
+- Constants: `MUTED_KEY`, `mutedIds` Set, `MUTE_ICON_OPEN`,
+  `MUTE_ICON_CLOSED`, `loadMutedIds()`, `saveMutedIds()`, `toggleMuted()`
+  all live just before `buildPopup()`.
+- This is a **personal mute, not a report.** It hides the message from
+  YOUR view; it does not flag the dot for moderation or affect what
+  other visitors see. If genuine moderation is ever needed, that's a
+  separate path (manual delete in Supabase per the terms).
+
+## Treasure chest (chosen-dot rendering)
+- Hourly mechanic: tapping the chest (when you've dropped today and no
+  one has claimed this hour) inserts into `chest_claims` and transforms
+  your dot into a gold-glowing mood emoji for the rest of the UTC hour.
+- Visual size: `CHEST_ICON_PX = 20` (a JS constant near the
+  `TREASURE_CHEST_SVG` definition). Both the chest icon (via
+  `.treasure-chest` width/height in CSS) AND the chosen-dot mood emoji
+  (via `ctx.font` size in canvas) reference this same value so they
+  share visual weight. **The CSS `width`/`height` MUST be kept in sync
+  manually with `CHEST_ICON_PX`** — there is no live link between CSS
+  and JS.
+- Chosen-dot canvas rendering (in `_drawDot`):
+  - Gold pulse ring drawn first via `ctx.arc` at `(x - 1, y)` for the
+    chosen state — the 1px leftward nudge is an empirical optical
+    correction so the pulse appears centered on the emoji glyph (Apple
+    Color Emoji ink renders slightly right of the (x, y) anchor).
+  - Single warm-gold drop-shadow glow on the emoji (`shadowBlur: 24,
+    rgba(255, 215, 0, 0.85)`). A previous wider+softer second pass was
+    removed because it read as a stray ring with a slightly different
+    color cast against the dark map.
+  - Emoji draw uses bounding-box compensation (`x + dx, y + dy` from
+    `measureText`) to push the visible ink toward the (x, y) anchor.
+
+## Static legal/info pages
+- `/terms`, `/privacy`, `/contact`, `/credits` — each is a folder with
+  its own `index.html`, all sharing `assets/legal.css` (dark background,
+  Inter heading, orange `#ff9e3d` link color).
+- `/credits` lists icon attributions to The Noun Project (icon names
+  link to the specific icon page; "The Noun Project" links to the
+  homepage). Add new attribution lines there as needed.
+- Linked from the Rules modal's bottom legal row (`#helpModal` in
+  `index.html` around line 1989).
 
 ## Known limitations
 - One-dot-per-day is localStorage-only (bypassable via incognito/clearing storage)
