@@ -3992,6 +3992,39 @@ function addDotMarker(msg) {
       className: "dot-tooltip"
     });
   }
+  // Override Leaflet's default click → openPopup so we can do an
+  // explicit smooth zoom-in for top-edge dots before opening. The
+  // popup's autoPan ([20, 20] padding) handles left/right/bottom
+  // slight overflow on its own, but at low zoom maxBoundsViscosity=1.0
+  // blocks the northward pan that a top-edge popup needs to fit
+  // (the visible top is already at VERT_BOUND, autoPan returns zero
+  // movement, popup stays clipped at the top). This mirrors the
+  // same fix applied on flare clicks.
+  m.off("click").on("click", () => {
+    if (m.isPopupOpen()) { m.closePopup(); return; }
+    const dotPoint = map.latLngToContainerPoint([msg.lat, msg.lng]);
+    const size = map.getSize();
+    const inTopEdge = dotPoint.y < size.y * 0.25;
+    const needsZoomIn = inTopEdge && map.getZoom() < 5;
+    if (!needsZoomIn) {
+      m.openPopup();
+      return;
+    }
+    // setView (not flyTo) → no bounce. +0.5 zoom gives enough
+    // vertical pan headroom to apply the 10% offset even at very
+    // low zoom where the visible top sits at VERT_BOUND.
+    const targetZoom = Math.max(map.getZoom() + 0.5, 4);
+    const dotWorld = map.project([msg.lat, msg.lng], targetZoom);
+    const targetCenter = map.unproject(
+      L.point(dotWorld.x, dotWorld.y - size.y * 0.10),
+      targetZoom
+    );
+    map.setView(targetCenter, targetZoom, {
+      animate: true,
+      duration: 0.45
+    });
+    map.once("moveend", () => m.openPopup());
+  });
   // Hover state into the dot-canvas for the scale effect. No view-count
   // tracking — the Heard panel selects randomly weighted toward recent now,
   // so every dot keeps its shot at airtime regardless of clicks/hovers.
