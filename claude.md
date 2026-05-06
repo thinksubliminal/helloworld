@@ -6,7 +6,8 @@ no likes.
 
 ## Stack
 - Single index.html
-- Leaflet.js for the map
+- Leaflet.js for the map (initial view + maxBounds + popup edge
+  behavior in the Map section below)
 - Supabase JS for the backend (database only — realtime subscriptions
   removed in favor of 30s polling; see Supabase section below)
 - **Cloudflare Worker** in front of Supabase for the boot read path
@@ -16,6 +17,65 @@ no likes.
   section below)
 - localStorage for one-dot-per-day client check, language preference,
   personal-mute list, and one-cast-per-day client lock
+- Continent attribution for flares/casts derives from
+  `continentFromLatLng()` — see Continent classification section
+
+## Map
+- Leaflet map, `worldCopyJump: true`, `zoomSnap: 0` (fractional
+  zoom for fluid trackpad/pinch), `maxZoom: 9`.
+- `INITIAL_ZOOM`: **2.8 desktop, 1.9 mobile**. `INITIAL_CENTER`:
+  `[20, 10]` (Atlantic-with-Europe-on-the-right framing). The
+  initial view is set in one shot via the L.map `center`/`zoom`
+  options — do NOT chain a second `setView` on boot or markers
+  visibly jump between the two frames.
+- `maxBounds: [[-VERT_BOUND, -HORIZ_BOUND], [VERT_BOUND, HORIZ_BOUND]]`
+  with `maxBoundsViscosity: 1.0`. `VERT_BOUND = 85.05` clamps the
+  view away from the poles; `HORIZ_BOUND = 1e6` is effectively
+  unbounded so worldCopyJump still works horizontally.
+- **Popup edge behavior**: dot and flare popups both use
+  `autoPan: true`, `autoPanPadding: [20, 20]`, `keepInView: false`.
+  This gives the same subtle "nudge" when a popup peeks past the
+  left/right/bottom edge.
+- The TOP edge is a special case. Popups open above their marker,
+  so a top-edge popup wants the map to pan north to fit. With
+  `maxBoundsViscosity: 1.0` clamping the visible top to `VERT_BOUND`
+  at low zoom, autoPan returns zero movement and the popup stays
+  clipped. **Both dot and flare click handlers compensate** by
+  detecting the top-region case (top 25% of viewport, zoom < 5)
+  and doing an explicit smooth `setView` (+0.5 zoom, 10% upward
+  offset, 0.45s ease, NO bounce — `setView` not `flyTo`) before
+  opening. Same fix in two places; if you change the threshold,
+  change both.
+- Flares additionally trigger this `setView` for an outer-corner
+  case at very low zoom (corner 18%, zoom < 3.5) where the flare
+  popup is too big to fit even with autoPan's max shift.
+- Cast lines, dot popup widths, flare popup widths, and the
+  Heard panel collapse threshold all share the same 768px
+  mobile cutoff.
+
+## Continent classification
+- `continentFromLatLng(lat, lng)` returns a continent for any
+  coord on Earth: bbox match if possible (`continentBBox`),
+  nearest-continent centroid otherwise (`nearestContinent`).
+- Bboxes are coarse axis-aligned rectangles in `(lat, w)` where
+  `w = ((lng + 540) % 360) - 180` (lng wrap-normalized to ±180).
+  Order matters — the cascade returns the first match, so more
+  specific rules go above more general ones (e.g. Iceland is
+  carved out before the Greenland rule below it).
+- **Greenland exception**: the North America bbox stops at
+  `w <= -50` (excludes Greenland's eastern half), and the
+  centroid fallback pulls high-latitude coords to Europe — at
+  high lat, `cos(lat)` shrinks longitude contributions so
+  Europe (52, 15) ends up "closer" than NA (45, -100) for a
+  point clearly above Greenland. A dedicated rule
+  (`lat 60-90, w -75 to -10`) classifies Greenland and the
+  polar Atlantic above it as North America. Iceland
+  (`lat 63-67, w -25 to -13`) is carved out one rule earlier
+  to keep it in Europe by convention.
+- `oceanFromLatLng(lat, lng)` is a separate cascade for water:
+  named seas/gulfs first, then polar oceans by lat, then
+  Pacific/Atlantic/Indian by lng band. Used for the popup
+  header label when reverse-geocode comes back empty.
 
 ## Character limits
 - All text inputs (dot messages, flares, flare responses, cast
@@ -376,7 +436,15 @@ ALTER POLICY "anyone can answer an unanswered ping" ON casts RENAME TO "anyone c
   Stored on insert; client-side fallback handles older rows where the column
   is NULL.
 - Click a row → flyTo the dot and open its popup.
-- Mobile (<768px): collapses to a small list-icon toggle button.
+- Mobile (<768px): renders as a collapsible carousel card. **Starts
+  collapsed on first load** (just the header bar with a chevron) so
+  the panel doesn't cover the map; tap the chevron to expand. The
+  `wireCarouselCollapse` IIFE applies the `.collapsed` class on init
+  for `innerWidth < 768`. Desktop keeps its default expanded state
+  since there's room for both. Auto-advance is suppressed while
+  collapsed (`startAutoAdvance` bails early on the `.collapsed`
+  check) so the slide timer doesn't tick uselessly behind a hidden
+  body.
 - Hidden entirely when there are no messages today.
 - **Muted dots are excluded from the candidate pool** — see Personal mute
   section below.
