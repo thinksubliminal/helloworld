@@ -273,6 +273,37 @@
      effect). Kept the rules around as dead code so the JS click toggle
      doesn't error if anything else queries them. */
   .msg-text.clampable { cursor: pointer; }
+  /* Personal mute (eye icon top-right of dot popup). Tap once to blur the
+     message text only for this device — the dot stays on the map, the popup
+     still opens, and the muted message also drops out of the Heard Around
+     the World rotation pool. Tap again to unmute. Pure localStorage, no
+     server state, no effect on what other visitors see. */
+  .msg-popup-wrap { position: relative; padding-right: 20px; }
+  .msg-mute {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.35);
+    transition: color 0.15s;
+    z-index: 1;
+  }
+  .msg-mute:hover { color: rgba(255, 255, 255, 0.85); }
+  .msg-mute svg { width: 14px; height: 14px; display: block; }
+  .msg-text.muted {
+    filter: blur(5px);
+    user-select: none;
+    pointer-events: none;
+    transition: filter 0.2s;
+  }
   .msg-meta {
     margin-top: 12px;
     display: flex;
@@ -3796,8 +3827,49 @@ function addDotMarker(msg) {
   dotCanvas.setDot(msg);
 }
 
+// ───────────── PERSONAL MUTE ─────────────
+// Per-device list of message IDs the user has chosen to blur. Stored in
+// localStorage. A muted message: dot stays on the map, popup still opens,
+// but the text is blurred until the user taps the eye icon to unmute.
+// Muted messages are also dropped from the Heard Around the World pool.
+// Pure local — no Supabase column, no server state, nobody else affected.
+// Daily UTC midnight reset deletes the underlying messages, so any stale
+// IDs in the list become harmless dead weight (no cleanup needed).
+const MUTED_KEY = "hw-muted-ids";
+const mutedIds = new Set();
+(function loadMutedIds() {
+  try {
+    const raw = localStorage.getItem(MUTED_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) for (const id of arr) mutedIds.add(id);
+  } catch (e) { /* ignore corrupt storage */ }
+})();
+function saveMutedIds() {
+  try { localStorage.setItem(MUTED_KEY, JSON.stringify([...mutedIds])); }
+  catch (e) { /* quota or disabled — no-op */ }
+}
+function toggleMuted(id) {
+  if (mutedIds.has(id)) mutedIds.delete(id);
+  else mutedIds.add(id);
+  saveMutedIds();
+}
+const MUTE_ICON_OPEN =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>' +
+    '<circle cx="12" cy="12" r="3"/>' +
+  '</svg>';
+const MUTE_ICON_CLOSED =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>' +
+    '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>' +
+    '<path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>' +
+    '<line x1="2" x2="22" y1="2" y2="22"/>' +
+  '</svg>';
+
 function buildPopup(msg) {
   const wrap = document.createElement("div");
+  wrap.className = "msg-popup-wrap";
   const mood = MOOD_BY_ID[msg.mood];
   const target = getCurrentLang();
 
@@ -3810,13 +3882,35 @@ function buildPopup(msg) {
     if (cached) displayText = cached;
   }
 
+  const muted = mutedIds.has(msg.id);
   wrap.innerHTML =
-    `<div class="msg-text">${escapeHtml(displayText)}</div>` +
+    `<button class="msg-mute" type="button" aria-label="${muted ? "unmute" : "mute"} this message" title="${muted ? "Unmute" : "Mute (only for you)"}">${muted ? MUTE_ICON_CLOSED : MUTE_ICON_OPEN}</button>` +
+    `<div class="msg-text${muted ? " muted" : ""}">${escapeHtml(displayText)}</div>` +
     `<div class="msg-meta">` +
       `<span class="msg-mood" style="--c:${mood?.color || "#999"}">${escapeHtml(mood?.name || msg.mood)}</span>` +
       `<span class="msg-divider">·</span>` +
       `<span class="msg-loc">${escapeHtml(msg.loc || "")}</span>` +
     `</div>`;
+
+  // Wire the mute toggle. stopPropagation/preventDefault so the click
+  // doesn't bubble to leaflet (which would close/move the popup). Re-renders
+  // the heard panel so the mute change is reflected in the side panel pool
+  // immediately — without this, the muted message would stay visible there
+  // until the next 30s rotation.
+  const muteBtn = wrap.querySelector(".msg-mute");
+  const muteTextEl = wrap.querySelector(".msg-text");
+  muteBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    toggleMuted(msg.id);
+    const nowMuted = mutedIds.has(msg.id);
+    muteTextEl.classList.toggle("muted", nowMuted);
+    muteBtn.innerHTML = nowMuted ? MUTE_ICON_CLOSED : MUTE_ICON_OPEN;
+    muteBtn.setAttribute("aria-label", nowMuted ? "unmute this message" : "mute this message");
+    muteBtn.setAttribute("title", nowMuted ? "Unmute" : "Mute (only for you)");
+    if (typeof scheduleHeardPanelRender === "function") scheduleHeardPanelRender();
+    else if (typeof renderHeardPanel === "function") renderHeardPanel();
+  });
 
   // First-time path: kick off the fetch and replace the text when it resolves.
   // No equality short-circuit — even if the translated string happens to match
@@ -4441,6 +4535,7 @@ function renderHeardPanel() {
   const byContinent = new Map();
   for (const msg of messages) {
     if (!msg.text) continue;
+    if (mutedIds.has(msg.id)) continue; // personal mute — drop from rotation
     const c = msg.continent || continentFromLatLng(msg.lat, msg.lng);
     if (!c) continue; // ocean — skip
     if (!byContinent.has(c)) byContinent.set(c, []);
