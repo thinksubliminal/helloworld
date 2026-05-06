@@ -6004,17 +6004,20 @@ function addFlareMarker(flare) {
     // Outer region — subtle zoom + pan to bring the flare into a
     // readable position. Less aggressive than mobile: zoom bumps by
     // at most one level (so a viewer at zoom 2.3 lands at 3.3, not
-    // 5), offset is 10% of viewport height, animation is the same
-    // duration. Once the move settles, popup opens.
+    // 5), offset is 10% of viewport height. Uses setView with
+    // animate:true rather than flyTo — flyTo simulates a flying
+    // camera (zoom out, pan, zoom back in) which reads as a bounce
+    // / spring at small adjustments. setView interpolates center
+    // and zoom linearly to the target in one motion.
     const targetZoom = Math.min(map.getZoom() + 1, FLARE_TAP_MIN_ZOOM);
     const flareWorld = map.project([flare.lat, flare.lng], targetZoom);
     const targetCenter = map.unproject(
       L.point(flareWorld.x, flareWorld.y - size.y * 0.10),
       targetZoom
     );
-    map.flyTo(targetCenter, targetZoom, {
-      duration: 0.45,
-      easeLinearity: 0.25
+    map.setView(targetCenter, targetZoom, {
+      animate: true,
+      duration: 0.45
     });
     map.once("moveend", () => m.openPopup());
   });
