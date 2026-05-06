@@ -5982,54 +5982,17 @@ function addFlareMarker(flare) {
       return;
     }
 
-    // ── Desktop: trust autoPan for the common case. Only fire   ──
-    // ── the explicit zoom-in when the popup would SEVERELY      ──
-    // ── clip — that means the flare sits in the outer corner    ──
-    // ── of the viewport AND the current zoom is so low that     ──
-    // ── autoPan's pan-shift can't physically fit the popup      ──
-    // ── (the world is smaller than the popup at that zoom).     ──
-    // ── For everything else, openPopup + autoPan: [20, 20]      ──
-    // ── gives the same gentle nudge dots get when slightly      ──
-    // ── off-screen.                                              ──
-    const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
-    const SEVERE_LOW_ZOOM = 3.5;          // below this, popup may not fit
-                                          // even after a max-pan
-    const CORNER_REGION_PCT = 0.18;       // outer 18% on each axis = corner
-    const inOuterCorner =
-      flarePoint.x < size.x * CORNER_REGION_PCT ||
-      flarePoint.x > size.x * (1 - CORNER_REGION_PCT) ||
-      flarePoint.y < size.y * CORNER_REGION_PCT ||
-      flarePoint.y > size.y * (1 - CORNER_REGION_PCT);
-    const needsZoomIn = map.getZoom() < SEVERE_LOW_ZOOM && inOuterCorner;
-
-    if (!needsZoomIn) {
-      m.openPopup();
-      return;
-    }
-
-    // Outer region — subtle zoom + pan to bring the flare into a
-    // readable position. Less aggressive than mobile: zoom bumps
-    // by at most one level above current AND at least up to zoom 4
-    // (the minimum where a 280px-wide popup fits comfortably inside
-    // the viewport without clipping). Without that floor, a viewer
-    // at the map's max-zoom-out (~2.3) would land at ~3.3, where
-    // the world is still small enough that edge-region popups
-    // peek past the viewport. Capped at FLARE_TAP_MIN_ZOOM=5 so
-    // we don't over-zoom users who were already mid-zoom.
-    const targetZoom = Math.min(
-      FLARE_TAP_MIN_ZOOM,
-      Math.max(map.getZoom() + 1, 4)
-    );
-    const flareWorld = map.project([flare.lat, flare.lng], targetZoom);
-    const targetCenter = map.unproject(
-      L.point(flareWorld.x, flareWorld.y - size.y * 0.10),
-      targetZoom
-    );
-    map.setView(targetCenter, targetZoom, {
-      animate: true,
-      duration: 0.45
-    });
-    map.once("moveend", () => m.openPopup());
+    // ── Desktop: openPopup unconditionally and let Leaflet's     ──
+    // ── autoPan ([20, 20] padding, set on bindPopup) nudge the  ──
+    // ── map subtly when the popup would clip the viewport. This ──
+    // ── is the same behavior dot popups use, and it produces a  ──
+    // ── consistent gentle adjustment at every zoom level — no   ──
+    // ── explicit zoom-jumps that read as "exaggerated" at some  ──
+    // ── zooms while feeling fine at others. Worst case at very  ──
+    // ── low zoom in a corner: popup may peek past one edge if   ──
+    // ── autoPan can't physically pan far enough; users can      ──
+    // ── manually zoom in if they want a tighter look.            ──
+    m.openPopup();
   });
 
   if (IS_HOVER_DEVICE && flare.text) {
