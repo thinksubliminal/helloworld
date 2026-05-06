@@ -3960,15 +3960,16 @@ function addDotMarker(msg) {
     iconAnchor: [13.5, 13.5]
   });
   const m = L.marker([msg.lat, msg.lng], { icon, riseOnHover: true, keyboard: false });
-  // Mobile-only autoPan: if a dot is near a screen edge, Leaflet shifts the
-  // map just enough to bring the popup fully into view; if the popup already
-  // fits, no movement happens. Desktop keeps autoPan off so taps near the
-  // edge don't budge the map.
+  // autoPan ON for both mobile and desktop. When a dot is near a screen
+  // edge, Leaflet shifts the map just enough to bring the popup fully
+  // into view; if the popup already fits, no movement happens. The
+  // 20px padding keeps the shift subtle so taps near the edge feel
+  // natural rather than dragging the map across the viewport.
   m.bindPopup(() => buildPopup(msg), {
     closeButton: false,
     minWidth: 220,
     maxWidth: 220,
-    autoPan: window.innerWidth < 768,
+    autoPan: true,
     autoPanPadding: [20, 20],
     keepInView: false
   });
@@ -5912,12 +5913,21 @@ function addFlareMarker(flare) {
     autoPan: true,
     className: "flare-popup"
   });
-  // Mobile-only pan-before-open. We want the flare to land at ~65% down
-  // the screen so the popup has room to open above it without covering
-  // the marker. Desktop opens immediately, no movement. Second-click
-  // toggle-close is preserved.
+  // Pan-before-open behavior, branching on viewport + zoom:
   //
-  // Two paths, each a SINGLE animation (no land-then-shift wobble):
+  //   • Mobile, ANY zoom → always pan/zoom so the flare lands at
+  //     ~65% down the screen, popup opens cleanly above.
+  //   • Desktop, zoom < FLARE_TAP_MIN_ZOOM → flares in low-zoom outer
+  //     regions would have their popup cut off by the viewport even
+  //     after Leaflet's autoPan, so we explicitly zoom in + offset
+  //     before opening (same path as mobile). This is the "flare in
+  //     an outer cut-off region" case.
+  //   • Desktop, zoom >= FLARE_TAP_MIN_ZOOM → open immediately. The
+  //     popup's `autoPan: true` shifts the map subtly if the popup
+  //     would peek past the viewport edge, otherwise no movement.
+  //
+  // Two animation paths, each a SINGLE motion (no land-then-shift
+  // wobble):
   //
   //   • Zoom < FLARE_TAP_MIN_ZOOM: project the flare to world-pixel
   //     coords AT THE TARGET ZOOM, shift up by 15% of viewport height,
@@ -5928,23 +5938,30 @@ function addFlareMarker(flare) {
   //     would otherwise swallow the offset pan entirely and leave the
   //     popup clipped.
   //
-  //   • Zoom >= FLARE_TAP_MIN_ZOOM: current zoom's projection is fine,
-  //     so a plain panTo to the in-zoom offset center settles in one
-  //     motion. Faster duration (0.35s vs 0.5s) since no zoom change.
+  //   • Zoom >= FLARE_TAP_MIN_ZOOM (mobile only): current zoom's
+  //     projection is fine, so a plain panTo to the in-zoom offset
+  //     center settles in one motion. Faster duration (0.35s vs 0.5s)
+  //     since no zoom change.
   //
   // The `moveend` listener registered after the call fires when the
   // animation completes for either path, opening the popup.
   const FLARE_TAP_MIN_ZOOM = 5;
   m.off("click").on("click", () => {
     if (m.isPopupOpen()) { m.closePopup(); return; }
-    if (window.innerWidth >= 768) {
+
+    const isMobile = window.innerWidth < 768;
+    const isLowZoom = map.getZoom() < FLARE_TAP_MIN_ZOOM;
+
+    // Desktop at normal zoom: open immediately; autoPan handles any
+    // small edge-overflow with a subtle pan. No flyTo needed.
+    if (!isMobile && !isLowZoom) {
       m.openPopup();
       return;
     }
 
     const size = map.getSize();
 
-    if (map.getZoom() < FLARE_TAP_MIN_ZOOM) {
+    if (isLowZoom) {
       // Combined zoom + offset, single flyTo. project()/unproject()
       // take an explicit zoom so the math is computed in the target
       // zoom's pixel space, not the current one.
@@ -5958,6 +5975,7 @@ function addFlareMarker(flare) {
         easeLinearity: 0.25
       });
     } else {
+      // Mobile at normal zoom: panTo the offset center.
       const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
       const targetCenter = map.containerPointToLatLng(
         L.point(flarePoint.x, flarePoint.y - size.y * 0.15)
