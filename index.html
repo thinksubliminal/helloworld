@@ -5950,43 +5950,72 @@ function addFlareMarker(flare) {
     if (m.isPopupOpen()) { m.closePopup(); return; }
 
     const isMobile = window.innerWidth < 768;
-    const isLowZoom = map.getZoom() < FLARE_TAP_MIN_ZOOM;
+    const size = map.getSize();
 
-    // Desktop at normal zoom: open immediately; autoPan handles any
-    // small edge-overflow with a subtle pan. No flyTo needed.
-    if (!isMobile && !isLowZoom) {
+    // ── Mobile: existing pan-before-open behavior, unchanged. ─────
+    if (isMobile) {
+      if (map.getZoom() < FLARE_TAP_MIN_ZOOM) {
+        const flareWorld = map.project([flare.lat, flare.lng], FLARE_TAP_MIN_ZOOM);
+        const targetCenter = map.unproject(
+          L.point(flareWorld.x, flareWorld.y - size.y * 0.15),
+          FLARE_TAP_MIN_ZOOM
+        );
+        map.flyTo(targetCenter, FLARE_TAP_MIN_ZOOM, {
+          duration: 0.5,
+          easeLinearity: 0.25
+        });
+      } else {
+        const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
+        const targetCenter = map.containerPointToLatLng(
+          L.point(flarePoint.x, flarePoint.y - size.y * 0.15)
+        );
+        map.panTo(targetCenter, {
+          animate: true,
+          duration: 0.35,
+          easeLinearity: 0.25
+        });
+      }
+      map.once("moveend", () => m.openPopup());
+      return;
+    }
+
+    // ── Desktop: check if the popup would already fit at the ─────
+    // ── current view. Only outer-region flares (where the popup ──
+    // ── would clip) trigger an adjustment, and that adjustment ───
+    // ── is gentler than mobile's: only +1 zoom level (capped at  ──
+    // ── FLARE_TAP_MIN_ZOOM) and a 10% vertical offset instead of ──
+    // ── 15%. Inner flares just open immediately and Leaflet's    ──
+    // ── autoPan handles any tiny remaining overflow.             ──
+    const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
+    const POPUP_HALF_WIDTH = 150;   // 280px max popup width / 2 + a little
+    const POPUP_HEADROOM   = 220;   // typical popup height when opened above
+    const PAD              = 20;
+    const popupFitsHoriz =
+      flarePoint.x - POPUP_HALF_WIDTH - PAD >= 0 &&
+      flarePoint.x + POPUP_HALF_WIDTH + PAD <= size.x;
+    const popupFitsVert =
+      flarePoint.y - POPUP_HEADROOM - PAD >= 0;
+
+    if (popupFitsHoriz && popupFitsVert) {
       m.openPopup();
       return;
     }
 
-    const size = map.getSize();
-
-    if (isLowZoom) {
-      // Combined zoom + offset, single flyTo. project()/unproject()
-      // take an explicit zoom so the math is computed in the target
-      // zoom's pixel space, not the current one.
-      const flareWorld = map.project([flare.lat, flare.lng], FLARE_TAP_MIN_ZOOM);
-      const targetCenter = map.unproject(
-        L.point(flareWorld.x, flareWorld.y - size.y * 0.15),
-        FLARE_TAP_MIN_ZOOM
-      );
-      map.flyTo(targetCenter, FLARE_TAP_MIN_ZOOM, {
-        duration: 0.5,
-        easeLinearity: 0.25
-      });
-    } else {
-      // Mobile at normal zoom: panTo the offset center.
-      const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
-      const targetCenter = map.containerPointToLatLng(
-        L.point(flarePoint.x, flarePoint.y - size.y * 0.15)
-      );
-      map.panTo(targetCenter, {
-        animate: true,
-        duration: 0.35,
-        easeLinearity: 0.25
-      });
-    }
-
+    // Outer region — subtle zoom + pan to bring the flare into a
+    // readable position. Less aggressive than mobile: zoom bumps by
+    // at most one level (so a viewer at zoom 2.3 lands at 3.3, not
+    // 5), offset is 10% of viewport height, animation is the same
+    // duration. Once the move settles, popup opens.
+    const targetZoom = Math.min(map.getZoom() + 1, FLARE_TAP_MIN_ZOOM);
+    const flareWorld = map.project([flare.lat, flare.lng], targetZoom);
+    const targetCenter = map.unproject(
+      L.point(flareWorld.x, flareWorld.y - size.y * 0.10),
+      targetZoom
+    );
+    map.flyTo(targetCenter, targetZoom, {
+      duration: 0.45,
+      easeLinearity: 0.25
+    });
     map.once("moveend", () => m.openPopup());
   });
 
