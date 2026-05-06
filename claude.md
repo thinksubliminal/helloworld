@@ -319,6 +319,15 @@ one cast per receiver per day, cross-continental only.
   cubic). The marching ants run throughout the draw, so the line
   appears to extend across the map progressively rather than flash
   in as a solid line.
+- Antimeridian: lines use the dots' raw longitudes — no ±360
+  shift to take the geographically shortest path across ±180°.
+  An earlier version did the shift so e.g. LA↔Tokyo would draw
+  across the Pacific, but visually the line "left" the map at
+  one edge and reappeared in an off-screen world copy. Drawing
+  in raw lng space keeps every cast line inside one visible
+  rectangle. Tradeoff: true antipodal pairs draw the long way
+  around (LA↔Tokyo via Atlantic+Eurasia). Acceptable — staying
+  on one rectangle reads better in this UI.
 
 ### Toolbar icon
 - `assets/cast-icon.svg` (Focus Tool icon attribution: Design Circle,
