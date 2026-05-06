@@ -3444,7 +3444,13 @@ const DotCanvas = L.Layer.extend({
       const haloR = isChosen
         ? (CHEST_ICON_PX * 0.55 + CHEST_ICON_PX * 0.15 * pulseScale) * s
         : (r + 3) * pulseScale;
-      ctx.arc(x, y, haloR, 0, Math.PI * 2);
+      // Manual nudge for the chosen-dot pulse so it sits optically
+      // centered on the emoji glyph. Empirical, not derived — Apple
+      // Color Emoji renders the visible ink slightly right of (x, y),
+      // so shifting the halo 1px left brings the two into visual
+      // alignment. Vertical alignment is unchanged.
+      const haloX = isChosen ? x - 1 : x;
+      ctx.arc(haloX, y, haloR, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
@@ -3463,9 +3469,20 @@ const DotCanvas = L.Layer.extend({
       ctx.font = `${Math.round(CHEST_ICON_PX * s)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      // OPTICAL centering: textBaseline:"middle" + textAlign:"center"
+      // anchors at the EM-BOX center, but Apple Color Emoji glyphs sit
+      // slightly upper-left of that anchor. Measure the actual glyph
+      // bounding box and shift the fillText draw so the visible ink
+      // ends up centered at (x, y) — which is also where the pulse
+      // halo (drawn via ctx.arc above) sits. Result: halo and emoji
+      // share an OPTICAL center, even though they're at different
+      // raw coordinates in the canvas.
+      const m = ctx.measureText(emoji);
+      const dx = ((m.actualBoundingBoxLeft   || 0) - (m.actualBoundingBoxRight  || 0)) / 2;
+      const dy = ((m.actualBoundingBoxAscent || 0) - (m.actualBoundingBoxDescent || 0)) / 2;
       ctx.shadowColor = "rgba(255, 215, 0, 0.85)";
       ctx.shadowBlur = 24;
-      ctx.fillText(emoji, x, y);
+      ctx.fillText(emoji, x + dx, y + dy);
       ctx.restore();
       return;
     }
