@@ -371,19 +371,17 @@
     transform: none;
   }
   /* Marching-ants animation on pending cast lines. The polyline is an
-     SVG <path> element with stroke-dasharray "3, 4" (set in JS via
+     SVG <path> element with stroke-dasharray "4, 5" (set in JS via
      CAST_LINE_DASH_PENDING) — animating stroke-dashoffset shifts the
      dash pattern along the path. The offset distance equals one full
-     dash + gap cycle (3 + 4 = 7px) so the animation loops seamlessly,
-     making the dashes appear to flow continuously toward the receiver.
+     dash + gap cycle (4 + 5 = 9px) so the animation loops seamlessly.
      Negative offset = direction along path (sender → receiver, since
-     the polyline points are added in that order). The class is removed
-     when the cast is answered, which stops the animation. */
+     the polyline points are added in that order). */
   @keyframes castMarch {
-    to { stroke-dashoffset: -7; }
+    to { stroke-dashoffset: -9; }
   }
   .cast-line-pending {
-    animation: castMarch 0.6s linear infinite;
+    animation: castMarch 0.7s linear infinite;
   }
   .msg-meta {
     margin-top: 12px;
@@ -6661,8 +6659,10 @@ const CAST_LINE_COLOR_ANSWERED = "#A87C32"; // answered: muted darker gold,
                                             // sits in the same warm family
                                             // as the flare amber #FF9E3D
 const CAST_LINE_SHORTEN_PX = 7;       // pixels short of each dot center
-const CAST_LINE_WEIGHT = 0.7;         // matches the country-outline stroke weight
-const CAST_LINE_DASH_PENDING = "3, 4"; // small dashes (used for both states)
+const CAST_LINE_WEIGHT = 1.5;         // thick enough to render on high-DPI
+                                      // mobile displays where 0.7 would
+                                      // sub-pixel-render to nothing
+const CAST_LINE_DASH_PENDING = "4, 5"; // small dashes (used for both states)
 const CAST_QUESTION_MAX = 100;        // matches dot/flare/response cap
 // Cast trigger icon. Recreation of the Focus Tool icon (Design Circle,
 // The Noun Project) as a stroked SVG so thickness is adjustable via a
@@ -6818,6 +6818,17 @@ function drawCastLine(cast) {
       dashArray: CAST_LINE_DASH_PENDING,
       opacity: isAnswered ? 0.5 : 0.85,
       interactive: false,
+      // Force SVG renderer so the .cast-line-pending CSS animation
+      // (stroke-dashoffset keyframes) actually targets a DOM element.
+      // Leaflet's default is SVG everywhere, but specifying explicitly
+      // guards against environments where it might fall back to canvas.
+      renderer: L.svg(),
+      // Don't let Leaflet clip the polyline to the visible bounds —
+      // long cast lines (e.g., crossing oceans) sometimes get culled
+      // when their bounding box extends beyond the viewport, especially
+      // at low zoom on mobile, leaving the line invisible even though
+      // it should be drawn.
+      noClip: true,
       className: "cast-line cast-line-pending"
     }
   );
