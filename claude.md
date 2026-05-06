@@ -15,7 +15,16 @@ no likes.
 - MyMemory API for translation (free, CORS, no signup — see Translation
   section below)
 - localStorage for one-dot-per-day client check, language preference,
-  and personal-mute list
+  personal-mute list, and one-cast-per-day client lock
+
+## Character limits
+- All text inputs (dot messages, flares, flare responses, cast
+  questions, cast answers) are capped at **100 characters** in the
+  client UI. Validation gates run at: `<textarea maxlength>`, the
+  visible counter, the submit-button enable check, and the final
+  pre-insert length guard. The DB CHECK constraints on `text`/
+  `question`/`answer` columns remain at the original 280 as a
+  permissive backstop — UI is the strict surface.
 
 ## Translation
 - Backend is **MyMemory** (`https://api.mymemory.translated.net/get`).
@@ -27,7 +36,8 @@ no likes.
   MyMemory just wants a contact email for high-usage IPs.
 - Quota is per-user, not app-wide, so scale is not a concern.
 - 500-byte limit per request — fine for individual dropadot messages
-  (text column is capped at 280 chars).
+  (UI caps inputs at 100 chars; DB column allows up to 280 as a
+  permissive backstop).
 - Response shape: `{ responseStatus: 200, responseData: { translatedText: "..." } }`.
 - Failures log `[translate:mymemory] failed: …` to the console.
   `translate()` returns `null` on any failure; callers fall back to the
@@ -213,6 +223,134 @@ alter table flare_responses
 ### Dev
 - Console: `resetMyFlare()` clears today's flare lock.
 
+## Cast
+A third interaction type, in the same family as flares. A user opens
+someone else's dot popup, taps the cast button in the bottom toolbar,
+asks one question, and that dot's owner gets exactly one chance to
+reply back. A gold dashed line connects the two dots on the map for
+both pending and answered casts (marching ants throughout; answered
+state just fades the color and opacity). One cast per sender per day,
+one cast per receiver per day, cross-continental only.
+
+### Feature flag
+- `IS_CAST_ENABLED` defaults to **true** for all visitors. The URL
+  flag `?cast=0` is kept as an emergency kill switch (e.g., if a
+  bug ships and we need to disable cast UI without a redeploy).
+- Internal naming: previously called "ping"; renamed everywhere
+  (variables, functions, CSS, DB table, localStorage keys). No code
+  references to the old name remain.
+
+### Tables
+- `casts` (id, sender_dot_id, receiver_dot_id, question, answer,
+  created_at). The cast itself: who sent, to whom, the question,
+  and the (possibly null) answer.
+- `sender_dot_id` and `receiver_dot_id` reference `messages.id` by
+  convention (no FK constraint — same client-trust pattern as
+  flares).
+- Daily reset: `casts` is included in the midnight UTC TRUNCATE
+  cron job alongside `flare_responses`, `flares`, `messages`.
+
+### RLS
+- `casts` SELECT public, INSERT public (`question` non-empty,
+  sender/receiver non-null).
+- UPDATE policy is restricted: only rows where `answer IS NULL` can
+  be updated, and the new row must satisfy `answer IS NOT NULL`.
+  This makes "first answer wins" atomic at the database level —
+  two concurrent answer attempts on the same cast produce exactly
+  one success.
+- DB-level constraints enforce the rules:
+  - `UNIQUE (sender_dot_id)` → one cast per sender per day (since
+    each user has at most one dot per day).
+  - `UNIQUE (receiver_dot_id)` → each dot can be cast to at most
+    once per day.
+  - `CHECK (sender_dot_id != receiver_dot_id)` → can't cast to
+    your own dot.
+
+### Cross-continental rule
+- Sender's dot and receiver's dot must be on different continents.
+  Continent is derived via `continentFromLatLng(lat, lng)` for both
+  dots (with `msg.continent` field used as primary if present, the
+  derived fallback used otherwise — `saveUserMessages()` strips
+  `continent` from localStorage so the user's own dot needs the
+  fallback after reload).
+- Enforcement is **client-side only** — no RLS policy verifies the
+  continents. A determined attacker could insert a same-continent
+  cast directly via the Supabase REST API. Same security gap as
+  flares (PR-2 deferred).
+
+### UI flow
+- Cast button is the **4th button** in the bottom toolbar, between
+  the flare and the globe. Dormant by default (dim, not-allowed
+  cursor); gets the `.active` class — gold tint, full opacity,
+  pointer cursor — only when:
+  1. A dot popup is currently open (`currentOpenDotId` set)
+  2. It's not the viewer's own dot
+  3. The viewer has dropped a dot today
+  4. The viewer has not cast today (`hw-casted-today`)
+  5. The target dot has not been cast to yet
+  6. The two dots are on different continents
+- Tapping the dormant button when conditions fail surfaces a
+  context-appropriate `flashHint(...)` toast in the same
+  toolbar-status style as flares' "you've shot a flare today":
+  - No dot dropped → "drop a dot before casting your line"
+  - Already cast today → "your line is already in the water"
+  - No popup open → "open a dot across the ocean to cast"
+- Tapping the active button sets `castFormOpenForId` and rebuilds
+  the open dot popup, which now renders the cast respond-area
+  inline. Q&A reuses the flare-popup classes (`.flare-popup-q`,
+  `.flare-popup-respond-area`, etc.) so the visual treatment
+  matches flare answers exactly.
+
+### Map line rendering
+- Polyline drawn in `castLayer` (Leaflet layer group). Endpoints
+  shortened **7 pixels short** of each dot center along the line's
+  own direction (computed in pixel space via `map.project/unproject`,
+  recomputed on every `zoomend` so the offset stays visually
+  consistent at any zoom).
+- Pending: bright gold `#F5B842`, opacity 0.85, dasharray "3 4",
+  marching-ants animation via the `.cast-line-pending` class.
+- Answered: muted gold `#A87C32`, opacity 0.5 — same dasharray and
+  marching animation, just dimmer color + lower opacity. The
+  marching never stops, by design (the animation is part of the
+  feature's identity, not a "still pending" indicator).
+- Send animation: when sendCast() succeeds,
+  `playCastLineDrawAnimation` tweens the polyline's second endpoint
+  from sender to receiver in lat/lng space over 700ms (ease-out
+  cubic). The marching ants run throughout the draw, so the line
+  appears to extend across the map progressively rather than flash
+  in as a solid line.
+
+### Toolbar icon
+- `assets/cast-icon.svg` (Focus Tool icon attribution: Design Circle,
+  The Noun Project) recreated as a stroked SVG: filled center dot
+  + outer dashed ring (`pathLength="80"`, `dasharray="3 7"` → exactly
+  8 dashes). Marching-ants animation runs continuously on the ring
+  via the `castIconMarch` keyframe, regardless of the button's
+  active state — visually links the toolbar icon to the cast lines
+  on the map.
+
+### One-time migration SQL (pings → casts rename, run if any
+### environment still has the old table name)
+```sql
+ALTER TABLE pings RENAME TO casts;
+
+SELECT cron.unschedule('midnight-utc-reset');
+SELECT cron.schedule(
+  'midnight-utc-reset',
+  '0 0 * * *',
+  'TRUNCATE TABLE flare_responses, flares, messages, casts;'
+);
+
+ALTER POLICY "anyone can read pings"               ON casts RENAME TO "anyone can read casts";
+ALTER POLICY "anyone can insert pings"             ON casts RENAME TO "anyone can insert casts";
+ALTER POLICY "anyone can answer an unanswered ping" ON casts RENAME TO "anyone can answer an unanswered cast";
+```
+
+### Dev
+- Console: `resetMyDot()` and `resetMyFlare()` already exist.
+  No `resetMyCast()` helper yet — clear `localStorage.hw-casted-today`
+  manually if needed during dev.
+
 ## Heard Around the World panel
 - Bottom-left frosted-glass card showing a rotating selection of dots,
   sampled with a **random-weighted-recent** algorithm (newer dots more
@@ -260,6 +398,12 @@ alter table flare_responses
 - Hourly mechanic: tapping the chest (when you've dropped today and no
   one has claimed this hour) inserts into `chest_claims` and transforms
   your dot into a gold-glowing mood emoji for the rest of the UTC hour.
+- **Spawn bounds**: the curated `TREASURE_LAND_LOCATIONS` array is
+  filtered to lat ∈ [-60, 70] and lng ∈ [-170, 170] so the chest
+  always lands somewhere navigable and never below the visible map
+  edge. Antarctica research stations (lat -77 to -90) were dropped
+  for that reason. Cycle length follows `TREASURE_CONTINENTS.length`
+  so adding/removing continents auto-adjusts the rotation.
 - Visual size: `CHEST_ICON_PX = 20` (a JS constant near the
   `TREASURE_CHEST_SVG` definition). Both the chest icon (via
   `.treasure-chest` width/height in CSS) AND the chosen-dot mood emoji
