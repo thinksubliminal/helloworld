@@ -2283,13 +2283,18 @@ const TREASURE_CHEST_SVG = `<svg viewBox="0 0 365 304" xmlns="http://www.w3.org/
   </g>
 </svg>`;
 
-// Curated land coordinates for the hourly treasure-chest position. ~55
-// entries spread across all 7 continents with deliberately rough per-
+// Curated land coordinates for the hourly treasure-chest position.
+// ~52 entries spread across 6 continents with deliberately rough per-
 // continent quotas (12 Asia, 10 Africa, 10 Europe, 8 North America,
-// 7 South America, 5 Oceania, 3 Antarctica research stations). All
-// points are well-known cities (or stations) — they're visible to
-// every visitor worldwide, so the list is hand-picked rather than
-// random GIS samples.
+// 7 South America, 5 Oceania). All points are well-known cities and
+// hand-picked rather than random GIS samples.
+//
+// Spawn bounds: latitude in [-60, 70], longitude in [-170, 170]. This
+// keeps the chest on or near major land masses, away from the extreme
+// polar edges of the map (where it's hard to navigate to and easily
+// hidden behind the bottom-of-screen UI). Antarctica research stations
+// were dropped on this basis — they spawned at lat -77 to -90 which
+// is below the visible map area on most zoom levels.
 const TREASURE_LAND_LOCATIONS = [
   // Asia (12)
   { lat:  35.6762, lng:  139.6503, country: "Japan",         continent: "Asia" },
@@ -2353,12 +2358,7 @@ const TREASURE_LAND_LOCATIONS = [
   { lat: -37.8136, lng:  144.9631, country: "Australia",     continent: "Oceania" },
   { lat: -36.8485, lng:  174.7633, country: "New Zealand",   continent: "Oceania" },
   { lat: -41.2865, lng:  174.7762, country: "New Zealand",   continent: "Oceania" },
-  { lat: -18.1416, lng:  178.4419, country: "Fiji",          continent: "Oceania" },
-
-  // Antarctica (3) — research stations
-  { lat: -77.8419, lng:  166.6863, country: "McMurdo Station",         continent: "Antarctica" },
-  { lat: -89.9911, lng:  139.2667, country: "Amundsen-Scott Station",  continent: "Antarctica" },
-  { lat: -78.4644, lng:  106.8367, country: "Vostok Station",          continent: "Antarctica" }
+  { lat: -18.1416, lng:  178.4419, country: "Fiji",          continent: "Oceania" }
 ];
 
 // ───────────── CITY DATABASE (for nearest-city labeling) ─────────────
@@ -4179,9 +4179,13 @@ function scheduleBottleHourTick() {
 // "don't yank the popup out from under the user" behavior is already
 // correct without a follow-up edit.
 
+// Continents the chest rotates through, in canonical order. Antarctica
+// was dropped because all of its candidate locations (research stations
+// at lat -77 to -90) fall outside the chest spawn bounds defined in
+// the TREASURE_LAND_LOCATIONS comment above.
 const TREASURE_CONTINENTS = [
   "Asia", "Africa", "Europe",
-  "North America", "South America", "Oceania", "Antarctica"
+  "North America", "South America", "Oceania"
 ];
 
 const treasureChestLayer = L.layerGroup();
@@ -4248,8 +4252,11 @@ const TREASURE_CHEST_ALREADY_CLAIMED =
 function getTreasureChestForHour(date) {
   const dateStr = bottleUtcDateString(date);
   const hour = date.getUTCHours();
-  const round = Math.floor(hour / 7);
-  const indexInRound = hour % 7;
+  // Cycle length follows the actual continent count so adding/removing
+  // continents in TREASURE_CONTINENTS auto-adjusts the rotation.
+  const cycleLength = TREASURE_CONTINENTS.length;
+  const round = Math.floor(hour / cycleLength);
+  const indexInRound = hour % cycleLength;
 
   const seedBase = (bottleHashSeed(dateStr) ^ 0x5A827999) >>> 0;
   // Different seed per round so the continent order changes each round.
