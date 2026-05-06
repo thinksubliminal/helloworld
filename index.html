@@ -5909,6 +5909,11 @@ function addFlareMarker(flare) {
     minWidth: 240,
     maxWidth: 280,
     autoPan: true,
+    // Match the dot popup's subtle edge-padding so a slightly off-screen
+    // flare popup gets a small nudge into view rather than the heavier
+    // realign Leaflet does with its tighter default [5, 5].
+    autoPanPadding: [20, 20],
+    keepInView: false,
     className: "flare-popup"
   });
   // Pan-before-open behavior, branching on viewport + zoom:
@@ -5977,24 +5982,27 @@ function addFlareMarker(flare) {
       return;
     }
 
-    // ── Desktop: check if the popup would already fit at the ─────
-    // ── current view. Only outer-region flares (where the popup ──
-    // ── would clip) trigger an adjustment, and that adjustment ───
-    // ── is gentler than mobile's: only +1 zoom level (capped at  ──
-    // ── FLARE_TAP_MIN_ZOOM) and a 10% vertical offset instead of ──
-    // ── 15%. Inner flares just open immediately and Leaflet's    ──
-    // ── autoPan handles any tiny remaining overflow.             ──
+    // ── Desktop: trust autoPan for the common case. Only fire   ──
+    // ── the explicit zoom-in when the popup would SEVERELY      ──
+    // ── clip — that means the flare sits in the outer corner    ──
+    // ── of the viewport AND the current zoom is so low that     ──
+    // ── autoPan's pan-shift can't physically fit the popup      ──
+    // ── (the world is smaller than the popup at that zoom).     ──
+    // ── For everything else, openPopup + autoPan: [20, 20]      ──
+    // ── gives the same gentle nudge dots get when slightly      ──
+    // ── off-screen.                                              ──
     const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
-    const POPUP_HALF_WIDTH = 150;   // 280px max popup width / 2 + a little
-    const POPUP_HEADROOM   = 220;   // typical popup height when opened above
-    const PAD              = 20;
-    const popupFitsHoriz =
-      flarePoint.x - POPUP_HALF_WIDTH - PAD >= 0 &&
-      flarePoint.x + POPUP_HALF_WIDTH + PAD <= size.x;
-    const popupFitsVert =
-      flarePoint.y - POPUP_HEADROOM - PAD >= 0;
+    const SEVERE_LOW_ZOOM = 3.5;          // below this, popup may not fit
+                                          // even after a max-pan
+    const CORNER_REGION_PCT = 0.18;       // outer 18% on each axis = corner
+    const inOuterCorner =
+      flarePoint.x < size.x * CORNER_REGION_PCT ||
+      flarePoint.x > size.x * (1 - CORNER_REGION_PCT) ||
+      flarePoint.y < size.y * CORNER_REGION_PCT ||
+      flarePoint.y > size.y * (1 - CORNER_REGION_PCT);
+    const needsZoomIn = map.getZoom() < SEVERE_LOW_ZOOM && inOuterCorner;
 
-    if (popupFitsHoriz && popupFitsVert) {
+    if (!needsZoomIn) {
       m.openPopup();
       return;
     }
