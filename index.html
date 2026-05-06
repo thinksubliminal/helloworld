@@ -6321,84 +6321,110 @@ if (IS_DEV_MODE) {
     }
   });
 
-  // ── Fetch today's real dots from Supabase ──
-  // Build a set of IDs we know are "ours" (already in localStorage) so we can
-  // flag them correctly when they come back from the database.
+  // ── Fetch today's data, edge-cached via Cloudflare Worker ──
+  // The worker at dropadot-cache.thinksubliminal.workers.dev/loadAll bundles
+  // messages, flares, and flare_responses into one ~30s edge-cached response.
+  // Goal: thousands of visitor page loads collapse into ~2 Supabase queries
+  // per minute instead of 3 per visitor. Falls back to direct Supabase reads
+  // if the worker is unreachable, so the site keeps working exactly like
+  // before in the worst case.
+  const WORKER_LOADALL_URL = "https://dropadot-cache.thinksubliminal.workers.dev/loadAll";
   const mineIds = new Set(loadUserMessages().map(m => m.id));
 
+  let bundle = null;
   try {
-    const { data, error } = await sb
-      .from("messages")
-      .select("id, text, lat, lng, loc, mood, created_at, continent")
-      .gte("created_at", todayMidnightUTC())
-      .order("created_at", { ascending: true });
-
-    if (!error && Array.isArray(data)) {
-      // Skip any rows already in the in-memory messages array (covers the case
-      // where boot races with realtime, or the user just dropped a dot).
-      const existingIds = new Set(messages.map(m => m.id));
-      for (const row of data) {
-        if (existingIds.has(row.id)) continue;
-        const msg = rowToMsg(row, mineIds);
-        messages.push(msg);
-        addDotMarker(msg);
-      }
-      updateLayers();
-    } else if (error) {
-      console.warn("[supabase] initial fetch failed:", error.message);
+    const r = await fetch(WORKER_LOADALL_URL);
+    if (r.ok) {
+      bundle = await r.json();
+    } else {
+      console.warn("[loadAll worker] non-OK status:", r.status);
     }
   } catch (e) {
-    console.warn("[supabase] initial fetch threw:", e);
+    console.warn("[loadAll worker] fetch threw, falling back to direct Supabase:", e);
+  }
+
+  // Messages.
+  let messagesData = bundle?.messages ?? null;
+  if (messagesData == null) {
+    try {
+      const { data, error } = await sb
+        .from("messages")
+        .select("id, text, lat, lng, loc, mood, created_at, continent")
+        .gte("created_at", todayMidnightUTC())
+        .order("created_at", { ascending: true });
+      if (error) console.warn("[supabase] initial fetch failed:", error.message);
+      else messagesData = data;
+    } catch (e) {
+      console.warn("[supabase] initial fetch threw:", e);
+    }
+  }
+  if (Array.isArray(messagesData)) {
+    // Skip any rows already in the in-memory messages array (covers the case
+    // where boot races with the poll, or the user just dropped a dot).
+    const existingIds = new Set(messages.map(m => m.id));
+    for (const row of messagesData) {
+      if (existingIds.has(row.id)) continue;
+      const msg = rowToMsg(row, mineIds);
+      messages.push(msg);
+      addDotMarker(msg);
+    }
+    updateLayers();
   }
 
   renderHeardPanel();
   syncFlareBtn();
 
-  // Fetch today's flares.
-  try {
-    const { data: flareRows, error: flareErr } = await sb
-      .from("flares")
-      .select("id, text, lat, lng, loc, continent, planter_id, planter_loc, created_at")
-      .gte("created_at", todayMidnightUTC())
-      .order("created_at", { ascending: true });
-    if (!flareErr && Array.isArray(flareRows)) {
-      for (const row of flareRows) {
-        const flare = rowToFlare(row);
-        flares.push(flare);
-        addFlareMarker(flare);
-      }
-      if (flares.length && !map.hasLayer(flareLayer)) flareLayer.addTo(map);
-    } else if (flareErr) {
-      console.warn("[supabase] flares fetch failed:", flareErr.message);
-    }
-  } catch (e) {
-    console.warn("[supabase] flares fetch threw:", e);
-  }
-
-  // Fetch today's flare responses and attach them to the in-memory flares.
-  if (flares.length > 0) {
+  // Flares.
+  let flareRows = bundle?.flares ?? null;
+  if (flareRows == null) {
     try {
-      const { data: respRows, error: respErr } = await sb
-        .from("flare_responses")
-        .select("id, flare_id, responder_id, text, created_at")
+      const { data, error } = await sb
+        .from("flares")
+        .select("id, text, lat, lng, loc, continent, planter_id, planter_loc, created_at")
         .gte("created_at", todayMidnightUTC())
         .order("created_at", { ascending: true });
-      if (!respErr && Array.isArray(respRows)) {
-        const flareById = new Map(flares.map(f => [f.id, f]));
-        for (const r of respRows) {
-          const f = flareById.get(r.flare_id);
-          if (!f) continue;
-          if (!f.responses) f.responses = [];
-          f.responses.push(r);
-        }
-        for (const f of flares) {
-          if ((f.responses || []).length > 0) refreshFlareMarkerStyle(f);
-        }
-      } else if (respErr) {
-        console.warn("[supabase] flare responses fetch failed:", respErr.message);
-      }
+      if (error) console.warn("[supabase] flares fetch failed:", error.message);
+      else flareRows = data;
     } catch (e) {
-      console.warn("[supabase] flare responses fetch threw:", e);
+      console.warn("[supabase] flares fetch threw:", e);
+    }
+  }
+  if (Array.isArray(flareRows)) {
+    for (const row of flareRows) {
+      const flare = rowToFlare(row);
+      flares.push(flare);
+      addFlareMarker(flare);
+    }
+    if (flares.length && !map.hasLayer(flareLayer)) flareLayer.addTo(map);
+  }
+
+  // Flare responses — only relevant if there are flares to attach to.
+  if (flares.length > 0) {
+    let respRows = bundle?.flare_responses ?? null;
+    if (respRows == null) {
+      try {
+        const { data, error } = await sb
+          .from("flare_responses")
+          .select("id, flare_id, responder_id, text, created_at")
+          .gte("created_at", todayMidnightUTC())
+          .order("created_at", { ascending: true });
+        if (error) console.warn("[supabase] flare responses fetch failed:", error.message);
+        else respRows = data;
+      } catch (e) {
+        console.warn("[supabase] flare responses fetch threw:", e);
+      }
+    }
+    if (Array.isArray(respRows)) {
+      const flareById = new Map(flares.map(f => [f.id, f]));
+      for (const r of respRows) {
+        const f = flareById.get(r.flare_id);
+        if (!f) continue;
+        if (!f.responses) f.responses = [];
+        f.responses.push(r);
+      }
+      for (const f of flares) {
+        if ((f.responses || []).length > 0) refreshFlareMarkerStyle(f);
+      }
     }
   }
 
