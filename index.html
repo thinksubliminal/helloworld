@@ -3094,6 +3094,20 @@ function oceanFromLatLng(lat, lng) {
 const VERT_BOUND = 85.05;
 const HORIZ_BOUND = 1e6;
 
+// Hoisted above map creation so we can pass the final center/zoom directly
+// into L.map options. Mobile (narrow viewport) starts more zoomed out so
+// users see more of the world.
+const IS_MOBILE_VIEWPORT = window.innerWidth < 768;
+const INITIAL_ZOOM = IS_MOBILE_VIEWPORT ? 1.5 : 2.3;
+const INITIAL_CENTER = [20, 10];
+
+// Map is created at its final view in one shot via center/zoom options.
+// Previous version chained `.setView([0, 0], 2)` and then immediately
+// `applyVerticalFit(true)` called `setView([20, 10], INITIAL_ZOOM, ...)`
+// — two back-to-back view changes that occasionally let the browser
+// paint the [0,0] zoom 2 frame before snapping to the final view, and
+// also gave Leaflet's internal layout a chance to shift between them.
+// Both effects manifested as visible "jumping" of all markers on load.
 const map = L.map("map", {
   worldCopyJump: true,
   maxZoom: 9,
@@ -3113,18 +3127,17 @@ const map = L.map("map", {
   zoomAnimation: true,
   zoomAnimationThreshold: 8,
   fadeAnimation: true,
-  markerZoomAnimation: true
-}).setView([0, 0], 2);
+  markerZoomAnimation: true,
+  center: INITIAL_CENTER,
+  zoom: INITIAL_ZOOM
+});
 
 L.control.zoom({ position: "topright" }).addTo(map);
 
-// Compute the zoom at which the full latitude range fills the viewport vertically.
-// Web Mercator world height (in px) at zoom z = 256 * 2^z. Pin minZoom so the world
-// can never be smaller than the viewport, eliminating top/bottom whitespace.
-// Mobile (narrow viewport) starts more zoomed out so users see more of the world.
-const IS_MOBILE_VIEWPORT = window.innerWidth < 768;
-const INITIAL_ZOOM = IS_MOBILE_VIEWPORT ? 1.5 : 2.3;
-
+// Compute the zoom at which the full latitude range fills the viewport
+// vertically. Web Mercator world height (in px) at zoom z = 256 * 2^z. Pin
+// minZoom so the world can never be smaller than the viewport, eliminating
+// top/bottom whitespace.
 function applyVerticalFit(initial) {
   const h = map.getSize().y;
   if (!h) return;
@@ -3133,9 +3146,10 @@ function applyVerticalFit(initial) {
   // even on very tall viewports where the world-fit zoom would exceed it.
   const minZ = Math.min(INITIAL_ZOOM, Math.max(1, fitZoom));
   map.setMinZoom(minZ);
-  if (initial) {
-    map.setView([20, 10], INITIAL_ZOOM, { animate: false });
-  } else if (map.getZoom() < minZ) {
+  // No setView on initial run — the map already opened at the correct view
+  // from the constructor options. Only re-snap on later resizes when the
+  // current zoom drops below the freshly-computed minZ.
+  if (!initial && map.getZoom() < minZ) {
     map.setView(map.getCenter(), minZ, { animate: false });
   }
 }
@@ -3204,6 +3218,15 @@ map.scrollWheelZoom.disable();
 let messages = [];
 const dotMarkers = new Map();
 const dotLayer = L.layerGroup();
+
+// Initial-paint mode for the dot canvas. While true, newly-added dots
+// render immediately at full opacity instead of fading in from 0. This
+// prevents the visual "drift into place" that happens when dots fade in
+// over multiple frames during which the map's projection can subtly
+// shift (font load reflow, country layer build, etc.). Flipped to false
+// after the boot's first 1.5s — by then the loadAll bundle is rendered
+// and any new dots arriving via polling SHOULD fade in for visibility.
+let _dotsInstantPaint = true;
 
 function buildMessages() {
   messages = loadUserMessages();
@@ -3298,7 +3321,11 @@ const DotCanvas = L.Layer.extend({
         mine: !!msg.mine,
         createdAt,
         pulsePhase: Math.random() * 3000,
-        opacity: 0,           // fades up from 0 on first appearance
+        // During initial paint window, snap to full opacity so dots can't
+        // appear to drift into place during async map-state shifts. After
+        // the window closes, dots arriving via polling fade in normally
+        // so they're visible as new arrivals.
+        opacity: _dotsInstantPaint ? 1 : 0,
         hoverScale: 1,
         expandedScale: 1
       });
@@ -6393,6 +6420,24 @@ if (IS_DEV_MODE) {
 
 // ───────────── BOOT ─────────────
 (async function boot() {
+  // Close the instant-paint window 1.5s after boot starts. Within this
+  // window, new dots render at full opacity immediately (no fade). After
+  // it closes, polled dots fade in normally so users see new arrivals.
+  // 1.5s comfortably covers the loadAll fetch + render even on slow
+  // connections; polling won't fire for 30s so there's no overlap risk.
+  setTimeout(() => { _dotsInstantPaint = false; }, 1500);
+
+  // Force Leaflet to recompute its internal map size, pixel origin, and
+  // pane transforms BEFORE the canvas overlays anchor to them. Without
+  // this, the dot/flare canvas can latch onto a stale pane transform
+  // from layout that's still settling (font load, scrollbar appearance,
+  // etc.), then visibly "snap" to the correct position once Leaflet
+  // catches up. Plain Leaflet markers (bottle, chest) avoid this
+  // because their pane is updated natively by Leaflet's render loop;
+  // our custom canvas overlay uses a one-shot anchor in onAdd → _move,
+  // so it sticks with whatever was true at that moment.
+  map.invalidateSize();
+
   // Canvas overlays for dots and flares — added before any addDotMarker /
   // addFlareMarker call so their setDot()/setFlare() side-effects capture
   // every item from the very start.
