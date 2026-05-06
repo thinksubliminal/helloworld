@@ -4952,6 +4952,10 @@ function goToSlide(idx, animate = true) {
 function startAutoAdvance() {
   stopAutoAdvance();
   if (carEntries.length <= 1) return;
+  // No point ticking through slides while the body is collapsed
+  // (mobile starts collapsed; user can also collapse manually).
+  const card = document.getElementById("hwToggle");
+  if (card && card.classList.contains("collapsed")) return;
   carTimer = setInterval(() => goToSlide(carIndex + 1), CAROUSEL_INTERVAL_MS);
 }
 function stopAutoAdvance() {
@@ -5784,6 +5788,14 @@ if (IS_DEV_MODE) {
   const card = document.getElementById("hwToggle");
   const btn = document.getElementById("hwCarCollapse");
   if (!card || !btn) return;
+  // Mobile: start collapsed so the panel doesnt cover the map on
+  // first load. User can tap the chevron to expand. Desktop keeps
+  // the default expanded state since theres room for both.
+  if (window.innerWidth < 768) {
+    card.classList.add("collapsed");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-label", "expand content");
+  }
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     const collapsed = card.classList.toggle("collapsed");
