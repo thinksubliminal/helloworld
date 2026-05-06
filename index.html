@@ -323,6 +323,68 @@
     pointer-events: none;
     transition: filter 0.2s;
   }
+  /* Cast section inside dot popups. Hidden entirely unless the
+     ?cast=1 feature flag is on. The displayed Q&A reuses the flare
+     popup's classes (.flare-popup-q, .flare-popup-respond-area, etc)
+     so the cast question/answer reads identically to a flare question/
+     response without duplicate styling. */
+  .msg-cast-section {
+    margin-top: 0;
+  }
+  /* Cast trigger icon — sits in the popup top-right corner where the
+     mute (eye) button used to live. Same positioning, swapped icon.
+     Only rendered when the viewer can cast this dot (CASE C). */
+  .msg-cast-trigger {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    color: rgba(245, 184, 66, 0.55);
+    transition: color 0.15s, transform 0.15s;
+    z-index: 1;
+  }
+  .msg-cast-trigger:hover {
+    color: rgba(245, 184, 66, 0.95);
+    transform: scale(1.08);
+  }
+  .msg-cast-trigger svg { width: 14px; height: 14px; display: block; }
+  /* Disabled state for same-continent dots — casts are cross-continental
+     only. Icon stays visible so the user knows the feature exists, but
+     dimmed so they read it as "not available." Tooltip via the title
+     attribute explains why on hover (desktop) and long-press (mobile).
+     A normal tap on mobile still triggers the inline message in the
+     section, so users without hover capability also discover the rule. */
+  .msg-cast-trigger.disabled {
+    color: rgba(245, 184, 66, 0.22);
+    cursor: not-allowed;
+  }
+  .msg-cast-trigger.disabled:hover {
+    color: rgba(245, 184, 66, 0.32);
+    transform: none;
+  }
+  /* Marching-ants animation on pending cast lines. The polyline is an
+     SVG <path> element with stroke-dasharray "3, 4" (set in JS via
+     CAST_LINE_DASH_PENDING) — animating stroke-dashoffset shifts the
+     dash pattern along the path. The offset distance equals one full
+     dash + gap cycle (3 + 4 = 7px) so the animation loops seamlessly,
+     making the dashes appear to flow continuously toward the receiver.
+     Negative offset = direction along path (sender → receiver, since
+     the polyline points are added in that order). The class is removed
+     when the cast is answered, which stops the animation. */
+  @keyframes castMarch {
+    to { stroke-dashoffset: -7; }
+  }
+  .cast-line-pending {
+    animation: castMarch 0.6s linear infinite;
+  }
   .msg-meta {
     margin-top: 12px;
     display: flex;
@@ -704,6 +766,15 @@
     fill: #ff9e3d;
     filter: drop-shadow(0 0 5px rgba(255, 158, 61, 0.55));
   }
+  /* Cast icon for the rules modal — same dashed-ring + center-dot
+     shape as the toolbar's #castBtn, scaled down. Uses currentColor
+     so the gold accent inherits from the surrounding `color`. */
+  .help-icon-cast {
+    width: 13px; height: 13px;
+    flex-shrink: 0;
+    color: #F5B842;
+    filter: drop-shadow(0 0 5px rgba(245, 184, 66, 0.5));
+  }
   /* Same four-pointed sparkle as the flare icon, neutral white — used by
      "THE SPIRIT" section so it visually rhymes with FLARES without being
      mistaken for one. */
@@ -978,6 +1049,55 @@
   }
   #moodBtn:active { transform: scale(0.96); }
   #moodBtn svg { width: 20px; height: 20px; display: block; }
+
+  /* Cast button — dormant by default (dim, non-interactive look). When a
+     cross-continental dot popup is open AND the viewer can cast (has
+     dropped, hasn't cast today, target not yet cast to), it gets the
+     .active class which restores full opacity + adds a soft gold glow.
+     Only visible when ?cast=1 (the boot script removes the [hidden]
+     attribute then). */
+  #castBtn {
+    width: 58px; height: 58px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.4);
+    cursor: not-allowed;
+    transition: transform 0.15s ease, background 0.2s ease,
+                box-shadow 0.25s ease, color 0.2s ease,
+                border-color 0.2s ease, opacity 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0.55;
+  }
+  #castBtn svg { width: 22px; height: 22px; display: block; }
+  #castBtn.active {
+    background: rgba(245, 184, 66, 0.15);
+    border-color: transparent;
+    color: #F5B842;
+    cursor: pointer;
+    opacity: 1;
+  }
+  #castBtn.active:hover {
+    transform: scale(1.08);
+    background: rgba(245, 184, 66, 0.22);
+  }
+  #castBtn.active:active { transform: scale(0.94); }
+  /* Marching-ants animation on the cast icon's outer ring. The
+     <circle> uses pathLength="80" with stroke-dasharray="3 7", so
+     one full dash + gap cycle is 10 units. Animating stroke-dashoffset
+     by -10 advances the pattern exactly one slot per loop, producing
+     a seamless rotation. Runs continuously (dormant + active) so the
+     icon always reads as "live signal," mirroring the marching cast
+     lines on the map. */
+  @keyframes castIconMarch {
+    to { stroke-dashoffset: -10; }
+  }
+  #castBtn .cast-icon-ring {
+    animation: castIconMarch 1.4s linear infinite;
+  }
 
   /* "Our mood" modal — same blurred-overlay + frosted-card pattern as
      #helpModal (the Rules modal), duplicated under its own selectors so the
@@ -1947,6 +2067,7 @@
         <polygon points="12,1 13.5,10.5 23,12 13.5,13.5 12,23 10.5,13.5 1,12 10.5,10.5" fill="currentColor"/>
       </svg>
     </button>
+    <button id="castBtn" type="button" aria-label="cast (open a cross-continental dot to enable)" hidden></button>
     <button id="moodBtn" type="button" aria-label="our mood today">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9"/>
@@ -2029,6 +2150,16 @@
     </div>
     <div class="help-section">
       <div class="help-section-header">
+        <svg class="help-icon-cast" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
+          <circle cx="32" cy="32" r="26" stroke-width="5" pathLength="80" stroke-dasharray="3 7"/>
+          <circle cx="32" cy="32" r="9" fill="currentColor" stroke="none"/>
+        </svg>
+        <span>Cast</span>
+      </div>
+      <div class="help-section-body">Reach across the ocean. Open any dot from another continent and cast a line to them. Ask them one thing. They get one chance to reply. One cast per day.</div>
+    </div>
+    <div class="help-section">
+      <div class="help-section-header">
         <svg class="help-icon-spirit" viewBox="0 0 24 24" aria-hidden="true">
           <polygon points="12,1 13.5,10.5 23,12 13.5,13.5 12,23 10.5,13.5 1,12 10.5,10.5"/>
         </svg>
@@ -2047,11 +2178,11 @@
 <div id="compose" role="dialog" aria-modal="true">
   <div class="compose-card">
     <div class="compose-loc" id="composeLoc">somewhere</div>
-    <textarea id="composeText" maxlength="280" placeholder="say something to the world..."></textarea>
+    <textarea id="composeText" maxlength="100" placeholder="say something to the world..."></textarea>
     <div class="mood-picker" id="moodPicker"></div>
     <div id="composeError" class="compose-error" hidden></div>
     <div class="compose-actions">
-      <div class="counter" id="counter">280</div>
+      <div class="counter" id="counter">100</div>
       <div class="btn-row">
         <button class="btn" id="cancelBtn" type="button">cancel</button>
         <button class="btn primary" id="sendBtn" type="button" disabled>send</button>
@@ -2064,10 +2195,10 @@
   <div class="flare-compose-card">
     <div class="flare-compose-eyebrow">shoot a flare</div>
     <div class="flare-compose-target" id="flareComposeTarget">addressed to the world</div>
-    <textarea id="flareComposeText" maxlength="280" placeholder="ask something of the world..."></textarea>
+    <textarea id="flareComposeText" maxlength="100" placeholder="ask something of the world..."></textarea>
     <div id="flareComposeError" class="flare-compose-error" hidden></div>
     <div class="flare-compose-actions">
-      <div class="flare-compose-counter" id="flareComposeCounter">280</div>
+      <div class="flare-compose-counter" id="flareComposeCounter">100</div>
       <div class="btn-row">
         <button class="btn" id="flareCancelBtn" type="button">cancel</button>
         <button class="flare-btn-primary" id="flareSendBtn" type="button" disabled>shoot</button>
@@ -2092,6 +2223,11 @@ if (IS_DEV_MODE) {
     "color:#888"
   );
 }
+
+// Cast feature flag. Now default-on for all visitors. `?cast=0` is
+// kept as an emergency kill switch — visit dropadot.world/?cast=0 if
+// the feature ever needs to be turned off without a code change.
+const IS_CAST_ENABLED = new URLSearchParams(location.search).get("cast") !== "0";
 
 // ───────────── SUPABASE ─────────────
 const SUPABASE_URL = "https://sxofvadbeznwgctdzbmk.supabase.co";
@@ -3855,6 +3991,12 @@ function addDotMarker(msg) {
     const el = m.getElement();
     if (el) { const d = el.querySelector(".dot"); if (d) d.classList.add("expanded"); }
     dotCanvas.setExpanded(msg.id, true);
+    // Track which dot popup is currently open so the toolbar #castBtn
+    // can target it. Reset cast-form state so opening a fresh popup
+    // doesn't inherit the previous popup's "form open" flag.
+    currentOpenDotId = msg.id;
+    if (castFormOpenForId !== msg.id) castFormOpenForId = null;
+    updateCastBtnState();
     // Defer the scrollHeight read (forces layout) and clampable wiring out of the
     // click frame so tap → popup feels instant, then we set up clamping next tick.
     requestAnimationFrame(() => {
@@ -3877,6 +4019,9 @@ function addDotMarker(msg) {
     const el = m.getElement();
     if (el) { const d = el.querySelector(".dot"); if (d) d.classList.remove("expanded"); }
     dotCanvas.setExpanded(msg.id, false);
+    if (currentOpenDotId === msg.id) currentOpenDotId = null;
+    if (castFormOpenForId === msg.id) castFormOpenForId = null;
+    updateCastBtnState();
   });
 
   dotLayer.addLayer(m);
@@ -3939,6 +4084,9 @@ function buildPopup(msg) {
     if (cached) displayText = cached;
   }
 
+  // Mute (eye) icon restored to the popup top-right corner. Cast entry
+  // point now lives in the bottom toolbar's #castBtn — popups no longer
+  // host a cast trigger.
   const muted = mutedIds.has(msg.id);
   wrap.innerHTML =
     `<button class="msg-mute" type="button" aria-label="${muted ? "unmute" : "mute"} this message" title="${muted ? "Unmute" : "Mute (only for you)"}">${muted ? MUTE_ICON_CLOSED : MUTE_ICON_OPEN}</button>` +
@@ -3950,10 +4098,9 @@ function buildPopup(msg) {
     `</div>`;
 
   // Wire the mute toggle. stopPropagation/preventDefault so the click
-  // doesn't bubble to leaflet (which would close/move the popup). Re-renders
-  // the heard panel so the mute change is reflected in the side panel pool
-  // immediately — without this, the muted message would stay visible there
-  // until the next 30s rotation.
+  // doesn't bubble to leaflet (which would close/move the popup).
+  // Re-renders the heard panel so a mute is reflected in the side panel
+  // pool immediately rather than waiting for the next 30s rotation.
   const muteBtn = wrap.querySelector(".msg-mute");
   const muteTextEl = wrap.querySelector(".msg-text");
   muteBtn.addEventListener("click", (e) => {
@@ -3991,6 +4138,12 @@ function buildPopup(msg) {
       if (p && p.update) p.update();
     });
   }
+
+  // Set up the cast UI for this popup. buildCastSection appends its
+  // own section to `wrap` (when there's anything to show) AND injects
+  // the corner trigger icon into `wrap` for CASE C (can-cast). All
+  // gated behind IS_CAST_ENABLED — no-op when the feature flag is off.
+  buildCastSection(msg, wrap);
 
   return wrap;
 }
@@ -4778,7 +4931,7 @@ function focusDot(msg) {
 const SILHOUETTE_STYLE = {
   fill: false,
   fillOpacity: 0,
-  color: "#2f4153",
+  color: "#1D2E42",
   weight: 0.7,
   opacity: 1,
   lineCap: "round",
@@ -4889,14 +5042,14 @@ function closeCompose(submitted) {
 
 function updateCounter() {
   const len = composeText.value.length;
-  counter.textContent = String(280 - len);
-  counter.classList.toggle("over", len > 280);
+  counter.textContent = String(100 - len);
+  counter.classList.toggle("over", len > 100);
   if (composeError && !composeError.hidden) clearComposeError();
   updateSendEnabled();
 }
 function updateSendEnabled() {
   const len = composeText.value.length;
-  sendBtn.disabled = !(len > 0 && len <= 280 && selectedMood);
+  sendBtn.disabled = !(len > 0 && len <= 100 && selectedMood);
 }
 
 const URL_RE = /(?:https?:\/\/|www\.)\S+|\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.(?:com|org|net|io|app|co|gov|edu|me|us|uk|ca|de|fr|jp|cn|au|ru|br|in|info|biz|tv|to|ly|gl|sh|xyz|dev|ai)\b/i;
@@ -4913,7 +5066,7 @@ function clearComposeError() {
 
 async function submit() {
   const text = composeText.value.trim();
-  if (!text || text.length > 280 || !pendingLatLng || !selectedMood) return;
+  if (!text || text.length > 100 || !pendingLatLng || !selectedMood) return;
   if (URL_RE.test(text)) {
     showComposeError("links aren't allowed here. plain text and feelings only.");
     return;
@@ -5922,9 +6075,9 @@ function buildFlarePopup(flare) {
     html +=
       `<div class="flare-popup-divider"></div>` +
       `<div class="flare-popup-respond-area">` +
-        `<textarea data-flare-respond maxlength="280" placeholder="say something back..."></textarea>` +
+        `<textarea data-flare-respond maxlength="100" placeholder="say something back..."></textarea>` +
         `<div class="flare-popup-respond-actions">` +
-          `<span class="flare-popup-counter" data-flare-counter>280</span>` +
+          `<span class="flare-popup-counter" data-flare-counter>100</span>` +
           `<button class="flare-btn-primary" data-flare-send disabled>respond</button>` +
         `</div>` +
         `<div class="flare-popup-error" data-flare-error hidden></div>` +
@@ -5985,15 +6138,15 @@ function buildFlarePopup(flare) {
   if (ta && sendBtn && counter) {
     const sync = () => {
       const len = ta.value.length;
-      counter.textContent = String(280 - len);
-      counter.classList.toggle("over", len > 280);
-      sendBtn.disabled = !(len > 0 && len <= 280);
+      counter.textContent = String(100 - len);
+      counter.classList.toggle("over", len > 100);
+      sendBtn.disabled = !(len > 0 && len <= 100);
       if (errEl && !errEl.hidden) { errEl.hidden = true; errEl.textContent = ""; }
     };
     ta.addEventListener("input", sync);
     sendBtn.addEventListener("click", async () => {
       const text = ta.value.trim();
-      if (!text || text.length > 280) return;
+      if (!text || text.length > 100) return;
       sendBtn.disabled = true;
       const ok = await respondToFlare(flare.id, text, errEl);
       if (!ok) sendBtn.disabled = false;
@@ -6073,9 +6226,9 @@ function clearFlareError() {
 }
 function updateFlareCounter() {
   const len = flareComposeText.value.length;
-  flareComposeCounter.textContent = String(280 - len);
-  flareComposeCounter.classList.toggle("over", len > 280);
-  flareSendBtn.disabled = !(len > 0 && len <= 280);
+  flareComposeCounter.textContent = String(100 - len);
+  flareComposeCounter.classList.toggle("over", len > 100);
+  flareSendBtn.disabled = !(len > 0 && len <= 100);
   if (!flareComposeError.hidden) clearFlareError();
 }
 
@@ -6108,7 +6261,7 @@ function closeFlareCompose() {
 
 async function submitFlare() {
   const text = flareComposeText.value.trim();
-  if (!text || text.length > 280 || !pendingFlareLatLng) return;
+  if (!text || text.length > 100 || !pendingFlareLatLng) return;
   if (URL_RE.test(text)) {
     showFlareError("links aren't allowed here. plain text only.");
     return;
@@ -6418,6 +6571,558 @@ if (IS_DEV_MODE) {
   };
 }
 
+// ───────────── PING ─────────────
+// Casts: one-shot questions between two dots. Sender taps a "cast" button
+// inside another user's dot popup, writes a question, sends it. A gold
+// dashed line appears on the map connecting the two dots until the
+// receiver opens their own dot popup, sees the question, and writes an
+// answer. After answering the line stays but goes solid.
+//
+// Constraints (enforced at the DB level via UNIQUE + CHECK on `casts`):
+//   - one cast per sender per day (sender_dot_id is UNIQUE; each user
+//     has at most one dot per day so this caps senders to 1 cast/day)
+//   - one cast per receiver (receiver_dot_id is UNIQUE)
+//   - sender_dot_id != receiver_dot_id (CHECK constraint, can't cast
+//     your own dot)
+// Daily reset: casts is included in the midnight UTC TRUNCATE.
+//
+// Feature gate: behavior only kicks in when IS_CAST_ENABLED is true.
+// All UI is hidden, all rendering is skipped, all fetch / poll calls
+// are short-circuited when the flag is off — so non-?cast=1 visitors
+// see and pay for nothing.
+
+// Toolbar #castBtn integration state. The cast entry point lives in the
+// bottom toolbar (4th icon) and depends on which dot popup, if any, is
+// currently open. We track that here and toggle the button's .active
+// class to reflect whether casting is available right now.
+let currentOpenDotId = null;  // id of the dot whose popup is open, or null
+let castFormOpenForId = null; // id of the dot whose popup should show
+                              // the cast respond-area (set when the user
+                              // taps the active #castBtn; cleared on
+                              // popup close or successful send)
+
+const CAST_KEY = "hw-casted-today";   // localStorage: { date, castId }
+const CAST_LINE_COLOR = "#F5B842";    // pending: bright chest gold
+const CAST_LINE_COLOR_ANSWERED = "#A87C32"; // answered: muted darker gold,
+                                            // sits in the same warm family
+                                            // as the flare amber #FF9E3D
+const CAST_LINE_SHORTEN_PX = 7;       // pixels short of each dot center
+const CAST_LINE_WEIGHT = 0.7;         // matches the country-outline stroke weight
+const CAST_LINE_DASH_PENDING = "3, 4"; // small dashes (used for both states)
+const CAST_QUESTION_MAX = 100;        // matches dot/flare/response cap
+// Cast trigger icon. Recreation of the Focus Tool icon (Design Circle,
+// The Noun Project) as a stroked SVG so thickness is adjustable via a
+// single stroke-width value instead of rewriting filled-shape paths.
+// Center dot + 8 radial ticks at N/S/E/W and the four diagonals.
+// To adjust thickness: change the stroke-width number on the <svg>.
+const CAST_TRIGGER_ICON =
+  '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">' +
+    // Outer dashed ring with marching-ants animation. pathLength="80"
+    // normalizes the circle's geometry to 80 units regardless of its
+    // actual circumference; dasharray "3 7" then divides cleanly into
+    // 8 equal dash + gap pairs (8 × 10 = 80) so we get exactly 8
+    // bold dashes around the ring with no seam at the loop point. The
+    // gap (7) is more than 2× the dash (3) for an iconic, breathing
+    // feel — not dense or dotted.
+    '<circle class="cast-icon-ring" cx="32" cy="32" r="26" stroke-width="5" pathLength="80" stroke-dasharray="3 7"/>' +
+    // Solid center dot.
+    '<circle cx="32" cy="32" r="9" fill="currentColor" stroke="none"/>' +
+  '</svg>';
+const casts = [];
+const castsByReceiver = new Map();    // receiver_dot_id → cast
+const castsBySender = new Map();      // sender_dot_id → cast
+// Each entry: { line: L.polyline, sender: msg, receiver: msg }
+// We keep references to the source dots so endpoints can be recomputed
+// on zoomend (pixel-space shortening → lat/lng changes per zoom level).
+const castLines = new Map();
+const castLayer = L.layerGroup();
+
+// Compute polyline endpoints that stop CAST_LINE_SHORTEN_PX pixels short
+// of each dot's center, walking inward along the line's direction. This
+// creates a clean intentional gap between the line and each dot at any
+// angle, dot position, or zoom level. Falls back to the raw centers when
+// the two dots are too close to leave room for the shorten on both
+// sides (degenerate case — line would invert otherwise).
+function castEndpoints(sender, receiver) {
+  const pa = map.project([sender.lat, sender.lng]);
+  const pb = map.project([receiver.lat, receiver.lng]);
+  const dx = pb.x - pa.x;
+  const dy = pb.y - pa.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len <= CAST_LINE_SHORTEN_PX * 2) {
+    return [[sender.lat, sender.lng], [receiver.lat, receiver.lng]];
+  }
+  const ux = dx / len;
+  const uy = dy / len;
+  const newPa = L.point(pa.x + ux * CAST_LINE_SHORTEN_PX, pa.y + uy * CAST_LINE_SHORTEN_PX);
+  const newPb = L.point(pb.x - ux * CAST_LINE_SHORTEN_PX, pb.y - uy * CAST_LINE_SHORTEN_PX);
+  return [map.unproject(newPa), map.unproject(newPb)];
+}
+
+// Recompute every cast line's endpoints after a zoom change. Pixel-
+// space shortening means the lat/lng of the endpoints depends on the
+// current zoom, so we re-derive them whenever zoom settles.
+function updateCastLineEndpoints() {
+  if (!IS_CAST_ENABLED) return;
+  for (const entry of castLines.values()) {
+    entry.line.setLatLngs(castEndpoints(entry.sender, entry.receiver));
+  }
+}
+map.on("zoomend", updateCastLineEndpoints);
+
+// localStorage helpers for the sender's daily lock. Tracks which cast
+// the sender created today so the popup can show "you've already cast"
+// state without a server round-trip. Date check ensures pre-midnight
+// casts auto-clear the next day.
+function loadMyCastId() {
+  try {
+    const raw = localStorage.getItem(CAST_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (obj && obj.date === todayStamp() && obj.castId) return obj.castId;
+  } catch (e) { /* ignore */ }
+  return null;
+}
+function saveMyCastId(castId) {
+  try {
+    localStorage.setItem(CAST_KEY, JSON.stringify({ date: todayStamp(), castId }));
+  } catch (e) { /* ignore */ }
+}
+
+// Idempotent apply: boot fetch and polling can both call this without
+// duplicating state. Returns true if a NEW cast was added (caller can
+// use that signal to log / re-render / etc).
+function applyCastRow(row) {
+  if (!row || !row.id) return false;
+  const existing = casts.find(p => p.id === row.id);
+  if (existing) {
+    // Answer arriving on a previously-known cast → swap the line to
+    // the "exchange complete" appearance: darker color + lower opacity.
+    // The marching-ants animation keeps running regardless of state —
+    // every cast line marches forever, by design.
+    if (!existing.answer && row.answer) {
+      existing.answer = row.answer;
+      const entry = castLines.get(row.id);
+      if (entry) entry.line.setStyle({ color: CAST_LINE_COLOR_ANSWERED, opacity: 0.5 });
+      // If the sender's popup is open looking at the receiver's dot,
+      // refresh it so "awaiting reply to cast" flips to the actual answer.
+      refreshOpenDotPopup(row.receiver_dot_id);
+    }
+    return false;
+  }
+  casts.push(row);
+  castsByReceiver.set(row.receiver_dot_id, row);
+  castsBySender.set(row.sender_dot_id, row);
+  drawCastLine(row);
+  // Clear any stale cast-form flag for this dot now that a cast
+  // exists for it; the popup's CASE A or B will take over rendering
+  // and CASE C should never match again for this row.
+  if (castFormOpenForId === row.receiver_dot_id) castFormOpenForId = null;
+  if (castFormOpenForId === row.sender_dot_id)   castFormOpenForId = null;
+  updateCastBtnState();
+  return true;
+}
+
+// Render a cast's connecting line via a Leaflet polyline. Endpoints
+// are offset CAST_LINE_END_OFFSET_PX below each dot's center so the
+// line doesn't visually overlap the dot. Polylines auto-recompute
+// their pixel positions on pan/zoom via Leaflet's SVG renderer; the
+// pixel-space offset itself is recomputed on `zoomend` via
+// updateCastLineEndpoints. Skips silently if either dot hasn't been
+// loaded yet — race with the messages fetch — and reconcileCastLines()
+// retries on later passes.
+function drawCastLine(cast) {
+  if (!IS_CAST_ENABLED) return;
+  if (castLines.has(cast.id)) return;
+  const sender = messages.find(m => m.id === cast.sender_dot_id);
+  const receiver = messages.find(m => m.id === cast.receiver_dot_id);
+  if (!sender || !receiver) return;
+  // Pending: bright gold, dashed, marching ants, opacity 0.85.
+  // Answered: muted darker gold, dashed, marching ants, opacity 0.5.
+  // The marching animation runs for both states — only color and
+  // opacity differ between pending and answered.
+  const isAnswered = !!cast.answer;
+  const line = L.polyline(
+    castEndpoints(sender, receiver),
+    {
+      color: isAnswered ? CAST_LINE_COLOR_ANSWERED : CAST_LINE_COLOR,
+      weight: CAST_LINE_WEIGHT,
+      dashArray: CAST_LINE_DASH_PENDING,
+      opacity: isAnswered ? 0.5 : 0.85,
+      interactive: false,
+      className: "cast-line cast-line-pending"
+    }
+  );
+  line.addTo(castLayer);
+  castLines.set(cast.id, { line, sender, receiver });
+}
+
+// Retry drawing any casts whose dots weren't in `messages` on the first
+// drawCastLine attempt. Called after the messages array changes (boot
+// finishes, polling adds rows, user drops their own dot).
+function reconcileCastLines() {
+  if (!IS_CAST_ENABLED) return;
+  for (const cast of casts) {
+    if (!castLines.has(cast.id)) drawCastLine(cast);
+  }
+}
+
+// If a dot's popup is currently open, rebuild its content so any cast
+// state changes (answer arrived, etc) are reflected immediately. No-op
+// if the popup isn't open.
+function refreshOpenDotPopup(dotId) {
+  const m = dotMarkers.get(dotId);
+  if (!m || !m.isPopupOpen || !m.isPopupOpen()) return;
+  const msg = messages.find(x => x.id === dotId);
+  if (!msg) return;
+  const popup = m.getPopup();
+  if (!popup) return;
+  popup.setContent(buildPopup(msg));
+  if (popup.update) popup.update();
+}
+
+async function loadCasts() {
+  if (!IS_CAST_ENABLED) return;
+  try {
+    const { data, error } = await sb
+      .from("casts")
+      .select("id, sender_dot_id, receiver_dot_id, question, answer, created_at")
+      .gte("created_at", todayMidnightUTC())
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.warn("[cast] initial fetch failed:", error.message);
+      return;
+    }
+    for (const row of data || []) applyCastRow(row);
+  } catch (e) {
+    console.warn("[cast] initial fetch threw:", e);
+  }
+}
+
+// Send a cast. Returns the inserted row on success, null on any
+// failure (already cast today, target already cast, network, etc).
+// On success, plays a "draw" animation on the new line so it visually
+// travels from sender to receiver as if it were broadcasting across.
+async function sendCast(senderDotId, receiverDotId, question) {
+  if (!IS_CAST_ENABLED) return null;
+  try {
+    const { data, error } = await sb
+      .from("casts")
+      .insert({ sender_dot_id: senderDotId, receiver_dot_id: receiverDotId, question })
+      .select()
+      .single();
+    if (error) {
+      console.warn("[cast] send failed:", error.message);
+      return null;
+    }
+    applyCastRow(data);
+    saveMyCastId(data.id);
+    const entry = castLines.get(data.id);
+    if (entry) playCastLineDrawAnimation(entry);
+    return data;
+  } catch (e) {
+    console.warn("[cast] send threw:", e);
+    return null;
+  }
+}
+
+// Animate a freshly-sent cast line growing from sender to receiver.
+// We don't touch the SVG dasharray or the marching-ants class — both
+// stay active throughout. Instead we tween the polyline's second
+// endpoint in lat/lng space so the line literally extends across the
+// map. Result: marching dashes appear progressively from sender side
+// to receiver side, never as a solid line. Ease-out so the line lands
+// gently on the receiver instead of slamming into it.
+function playCastLineDrawAnimation(entry) {
+  if (!IS_CAST_ENABLED || !entry) return;
+  const { line, sender, receiver } = entry;
+  const ends = castEndpoints(sender, receiver);
+  const startLL = ends[0];
+  const endLL = ends[1];
+  const sLat = startLL.lat != null ? startLL.lat : startLL[0];
+  const sLng = startLL.lng != null ? startLL.lng : startLL[1];
+  const eLat = endLL.lat   != null ? endLL.lat   : endLL[0];
+  const eLng = endLL.lng   != null ? endLL.lng   : endLL[1];
+
+  const duration = 700;
+  const startTime = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - startTime) / duration);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    const lat = sLat + (eLat - sLat) * eased;
+    const lng = sLng + (eLng - sLng) * eased;
+    line.setLatLngs([[sLat, sLng], [lat, lng]]);
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      // Snap to the canonical endpoints on the final frame so any
+      // sub-pixel rounding from the easing math is corrected.
+      line.setLatLngs([startLL, endLL]);
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// Answer an unanswered cast. RLS allows updates only on rows where
+// answer IS NULL, so a second answer attempt (or two concurrent answer
+// races) silently fails for the loser.
+async function answerCast(castId, answer) {
+  if (!IS_CAST_ENABLED) return null;
+  try {
+    const { data, error } = await sb
+      .from("casts")
+      .update({ answer })
+      .eq("id", castId)
+      .is("answer", null)
+      .select()
+      .single();
+    if (error) {
+      console.warn("[cast] answer failed:", error.message);
+      return null;
+    }
+    applyCastRow(data);
+    return data;
+  } catch (e) {
+    console.warn("[cast] answer threw:", e);
+    return null;
+  }
+}
+
+// Recompute the toolbar #castBtn's visual state based on what dot
+// popup (if any) is currently open and whether the viewer can cast to
+// it. Active = pulled from #ccss `:not(.locked)` styling: full color +
+// soft glow + clickable cursor. Dormant otherwise. Called on popup
+// open / close, on send / answer, and on boot.
+function updateCastBtnState() {
+  const castBtn = document.getElementById("castBtn");
+  if (!castBtn) return;
+  // Reveal the button only when ?cast=1; otherwise keep it hidden so
+  // non-test visitors see the original three-button toolbar.
+  if (!IS_CAST_ENABLED) {
+    castBtn.hidden = true;
+    castBtn.classList.remove("active");
+    return;
+  }
+  castBtn.hidden = false;
+
+  let active = false;
+  let label = "cast (open a cross-continental dot to enable)";
+  do {
+    if (!currentOpenDotId) break;
+    const msg = messages.find(m => m.id === currentOpenDotId);
+    if (!msg) break;
+    if (msg.mine) { label = "you can't cast to your own dot"; break; }
+    const myDot = messages.find(m => m.mine);
+    if (!myDot) { label = "drop a dot first to enable casting"; break; }
+    const myCastId = loadMyCastId();
+    const myCast = myCastId ? casts.find(p => p.id === myCastId) : null;
+    if (myCast) { label = "you've already cast your line today"; break; }
+    if (castsByReceiver.get(msg.id)) { label = "this dot has already been cast to"; break; }
+    const myCont  = myDot.continent || continentFromLatLng(myDot.lat,  myDot.lng);
+    const msgCont = msg.continent   || continentFromLatLng(msg.lat,    msg.lng);
+    if (myCont && msgCont && myCont === msgCont) {
+      label = "casts are for cross-continental connections only";
+      break;
+    }
+    active = true;
+    label = "cast (ask one question)";
+  } while (false);
+
+  castBtn.classList.toggle("active", active);
+  castBtn.setAttribute("aria-label", label);
+  castBtn.setAttribute("title", label);
+}
+
+// Wire the #castBtn click. Only fires when active; sets the form-open
+// flag for the currently-open dot and rebuilds its popup so the cast
+// respond-area appears inline (same flare-style layout as the rest of
+// the section).
+(function wireCastBtn() {
+  const castBtn = document.getElementById("castBtn");
+  if (!castBtn) return;
+  // Inject the cast icon SVG once. The svg constant is defined further
+  // below in the file but at module-evaluation time it'll be hoisted-
+  // available via const TDZ won't matter here because this IIFE runs
+  // top-to-bottom after PING section constants are evaluated.
+  castBtn.innerHTML = CAST_TRIGGER_ICON;
+  castBtn.addEventListener("click", (ev) => {
+    if (!IS_CAST_ENABLED) return;
+    ev.preventDefault();
+    // Status hint when the user hasn't yet dropped a dot today —
+    // mirrors the flare button's "drop a dot first to unlock flares"
+    // / "you've shot your flare today" pattern via flashHint(), so
+    // the cast button reads as part of the same toolbar vocabulary.
+    if (!hasDroppedToday()) {
+      flashHint("drop a dot before casting your line");
+      return;
+    }
+    // Already cast today (one cast per day per user) — surface the
+    // status before any other check, since opening a different dot
+    // can't change this state.
+    const myCastId = loadMyCastId();
+    if (myCastId && casts.find(p => p.id === myCastId)) {
+      flashHint("your line is already in the water");
+      return;
+    }
+    if (!currentOpenDotId) {
+      flashHint("open a dot across the ocean to cast");
+      return;
+    }
+    if (!castBtn.classList.contains("active")) return;
+    castFormOpenForId = currentOpenDotId;
+    refreshOpenDotPopup(currentOpenDotId);
+  });
+})();
+
+// Set up the cast UI for this popup. Two distinct injections:
+//   1) When the viewer can cast this dot (CASE C): inject a small
+//      radar/signal icon button into `wrap`'s top-right corner. Click
+//      reveals the question form below in the section.
+//   2) When there's a Q&A to display (CASE A or B) or the form has
+//      been opened (CASE C after click): append a section element with
+//      the flare-style Q&A layout (.flare-popup-q, .flare-popup-respond-
+//      area, .flare-popup-counter, .flare-btn-primary) so cast Q&A reads
+//      identically to flare Q&A.
+function buildCastSection(msg, wrap) {
+  if (!IS_CAST_ENABLED) return null;
+
+  const isMine = !!msg.mine;
+  const myDot = messages.find(m => m.mine);
+  const myCastId = loadMyCastId();
+  const myCast = myCastId ? casts.find(p => p.id === myCastId) : null;
+  const incoming = castsByReceiver.get(msg.id);
+
+  // ── Helpers ──────────────────────────────────────────────────────
+  const stopBubble = (el) => {
+    el.addEventListener("click", (ev) => ev.stopPropagation());
+    el.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  };
+
+  const makeSection = () => {
+    const section = document.createElement("div");
+    section.className = "msg-cast-section";
+    section.appendChild(Object.assign(document.createElement("div"),
+      { className: "flare-popup-divider" }));
+    return section;
+  };
+
+  // Builds the input + counter + send button block in flare-popup
+  // style. submitLabel = button text. onSubmit receives the trimmed
+  // text and returns a Promise; while it's pending the button is
+  // disabled. If it resolves truthy the popup is rebuilt in place.
+  const makeRespondArea = (placeholder, submitLabel, onSubmit) => {
+    const area = document.createElement("div");
+    area.className = "flare-popup-respond-area";
+
+    const ta = document.createElement("textarea");
+    ta.placeholder = placeholder;
+    ta.maxLength = CAST_QUESTION_MAX;
+    stopBubble(ta);
+    area.appendChild(ta);
+
+    const actions = document.createElement("div");
+    actions.className = "flare-popup-respond-actions";
+    const counter = document.createElement("span");
+    counter.className = "flare-popup-counter";
+    counter.textContent = String(CAST_QUESTION_MAX);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "flare-btn-primary";
+    btn.textContent = submitLabel;
+    btn.disabled = true;
+    actions.appendChild(counter);
+    actions.appendChild(btn);
+    area.appendChild(actions);
+
+    ta.addEventListener("input", () => {
+      const len = ta.value.trim().length;
+      counter.textContent = String(CAST_QUESTION_MAX - ta.value.length);
+      counter.classList.toggle("over", ta.value.length > CAST_QUESTION_MAX);
+      btn.disabled = !(len > 0 && ta.value.length <= CAST_QUESTION_MAX);
+    });
+
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const text = ta.value.trim();
+      if (!text) return;
+      btn.disabled = true;
+      const result = await onSubmit(text);
+      if (result) {
+        refreshOpenDotPopup(msg.id);
+      } else {
+        btn.disabled = false;
+      }
+    });
+
+    return { area, focus: () => ta.focus() };
+  };
+
+  // ── CASE A: I'm viewing my own dot, someone cast me. ───────────
+  if (isMine && incoming) {
+    const section = makeSection();
+    const q = document.createElement("div");
+    q.className = "flare-popup-q";
+    q.textContent = incoming.question;
+    section.appendChild(q);
+
+    if (incoming.answer) {
+      const a = document.createElement("div");
+      a.className = "flare-popup-response";
+      a.style.marginTop = "12px";
+      a.textContent = incoming.answer;
+      section.appendChild(a);
+    } else {
+      const { area } = makeRespondArea("say something back...", "answer",
+        (text) => answerCast(incoming.id, text));
+      section.appendChild(area);
+    }
+    wrap.appendChild(section);
+    return section;
+  }
+
+  // ── CASE B: I'm viewing the dot I cast. ────────────────────────
+  if (myCast && myCast.receiver_dot_id === msg.id) {
+    const section = makeSection();
+    const q = document.createElement("div");
+    q.className = "flare-popup-q";
+    q.textContent = myCast.question;
+    section.appendChild(q);
+
+    if (myCast.answer) {
+      const a = document.createElement("div");
+      a.className = "flare-popup-response";
+      a.style.marginTop = "12px";
+      a.textContent = myCast.answer;
+      section.appendChild(a);
+    } else {
+      const locked = document.createElement("div");
+      locked.className = "flare-popup-locked";
+      locked.textContent = "awaiting reply to cast";
+      section.appendChild(locked);
+    }
+    wrap.appendChild(section);
+    return section;
+  }
+
+  // ── CASE C: viewing someone else's dot, viewer has their own ──
+  // ── dot, and they've tapped the active toolbar #castBtn so the ──
+  // ── cast form should appear inline. Otherwise the popup shows  ──
+  // ── nothing extra — entry point lives in the toolbar.          ──
+  if (!isMine && myDot && castFormOpenForId === msg.id) {
+    const section = makeSection();
+    const { area, focus } = makeRespondArea("ask one question...", "send",
+      (text) => sendCast(myDot.id, msg.id, text));
+    section.appendChild(area);
+    wrap.appendChild(section);
+    focus();
+    return section;
+  }
+
+  // CASE D: nothing relevant.
+  return null;
+}
+
 // ───────────── BOOT ─────────────
 (async function boot() {
   // Close the instant-paint window 1.5s after boot starts. Within this
@@ -6447,6 +7152,10 @@ if (IS_DEV_MODE) {
   buildMessages();
   rebuildDots();
   if (!map.hasLayer(dotLayer)) dotLayer.addTo(map);
+
+  // Cast layer carries the polylines connecting cast dots. Only added
+  // when the ?cast=1 flag is on so non-test visitors pay nothing.
+  if (IS_CAST_ENABLED && !map.hasLayer(castLayer)) castLayer.addTo(map);
 
   // Drop the hourly bottle and start the UTC-hour ticker. Pure client-side,
   // independent of the Supabase boot path — runs even if the network is
@@ -6546,6 +7255,15 @@ if (IS_DEV_MODE) {
       addDotMarker(msg);
     }
     updateLayers();
+  }
+
+  // Boot fetch for today's casts, run after the messages array is
+  // populated so drawCastLine can resolve sender/receiver dots on the
+  // first try. Falls back gracefully if either dot is missing
+  // (reconcileCastLines retries on later poll ticks).
+  if (IS_CAST_ENABLED) {
+    await loadCasts();
+    reconcileCastLines();
   }
 
   renderHeardPanel();
@@ -6708,7 +7426,7 @@ if (IS_DEV_MODE) {
     const since = lastSeenAt;
     const hk = currentHourKey();
     try {
-      const [m, f, r, c] = await Promise.all([
+      const queries = [
         sb.from("messages")
           .select("id, text, lat, lng, loc, mood, created_at, continent")
           .gt("created_at", since).order("created_at", { ascending: true }),
@@ -6723,7 +7441,21 @@ if (IS_DEV_MODE) {
         sb.from("chest_claims")
           .select("hour_key, dot_id, mood, claimed_at")
           .eq("hour_key", hk).maybeSingle()
-      ]);
+      ];
+      // Casts are polled un-incrementally (full today's window) because
+      // they can be UPDATED in place (when answered), and a created_at
+      // cursor would miss those updates. The table is small enough
+      // (max ~one cast per active user per day) that the extra bytes
+      // are negligible. Only fires when the ?cast=1 flag is on.
+      if (IS_CAST_ENABLED) {
+        queries.push(
+          sb.from("casts")
+            .select("id, sender_dot_id, receiver_dot_id, question, answer, created_at")
+            .gte("created_at", todayMidnightUTC())
+        );
+      }
+      const results = await Promise.all(queries);
+      const [m, f, r, c, castResult] = results;
       let touched = false;
       let maxSeen = since;
       if (Array.isArray(m.data)) {
@@ -6743,6 +7475,14 @@ if (IS_DEV_MODE) {
           if (row.created_at && row.created_at > maxSeen) maxSeen = row.created_at;
           if (applyFlareResponseRow(row)) refreshOpenFlarePopup(row.flare_id);
         }
+      }
+      // Apply cast updates: new casts render new lines, answered casts
+      // flip line styles, both in-memory and visually. After applying,
+      // reconcile so any casts whose dots arrived in this same poll get
+      // their lines drawn.
+      if (IS_CAST_ENABLED && castResult && Array.isArray(castResult.data)) {
+        for (const row of castResult.data) applyCastRow(row);
+        reconcileCastLines();
       }
       // Advance the cursor unconditionally — even when every returned row
       // was a duplicate (e.g., the very first poll after boot, when the
