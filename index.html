@@ -6914,6 +6914,18 @@ const castsBySender = new Map();      // sender_dot_id → cast
 const castLines = new Map();
 const castLayer = L.layerGroup();
 
+// Shared SVG renderer for every cast polyline. The padding value is the
+// fraction of the viewport size to extend the SVG canvas beyond the
+// visible bounds — Leaflet's default is 0.1 (10%), which means a fast
+// pan / swipe on mobile drags the polyline outside the painted SVG
+// region before Leaflet repaints it, and the line visibly disappears
+// until the gesture settles. Bumping to 2 means the SVG covers ~5x the
+// visible area total (viewport + 200% on each side), so even aggressive
+// multi-screen swipes keep the full polyline inside the painted region.
+// Cost: a single large SVG element instead of many small ones —
+// negligible at the scale of dozens of cast lines.
+const castLineRenderer = L.svg({ padding: 2 });
+
 // Compute polyline endpoints that stop CAST_LINE_SHORTEN_PX pixels short
 // of each dot's center, walking inward along the line's direction. This
 // creates a clean intentional gap between the line and each dot at any
@@ -7039,11 +7051,13 @@ function drawCastLine(cast) {
       dashArray: CAST_LINE_DASH_PENDING,
       opacity: isAnswered ? 0.5 : 0.85,
       interactive: false,
-      // Force SVG renderer so the .cast-line-pending CSS animation
-      // (stroke-dashoffset keyframes) actually targets a DOM element.
-      // Leaflet's default is SVG everywhere, but specifying explicitly
-      // guards against environments where it might fall back to canvas.
-      renderer: L.svg(),
+      // Use the shared castLineRenderer (SVG with padding: 2) so the
+      // .cast-line-pending CSS animation has a real DOM element to
+      // target AND the polyline stays painted across aggressive
+      // pan / swipe gestures on mobile. Sharing one renderer instead
+      // of allocating L.svg() per polyline also avoids one SVG element
+      // per cast line in the overlay pane.
+      renderer: castLineRenderer,
       // Don't let Leaflet clip the polyline to the visible bounds —
       // long cast lines (e.g., crossing oceans) sometimes get culled
       // when their bounding box extends beyond the viewport, especially
