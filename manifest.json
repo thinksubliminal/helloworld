@@ -1,6 +1,6 @@
 {
-  "name": "dropadot",
-  "short_name": "dropadot",
+  "name": "drop a dot",
+  "short_name": "drop a dot",
   "description": "Drop a dot on a live world map and say something. Anonymous. Gone by midnight.",
   "start_url": "/",
   "scope": "/",
