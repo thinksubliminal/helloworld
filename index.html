@@ -4354,24 +4354,35 @@ function bottleUtcDateString(d) {
     String(d.getUTCDate()).padStart(2, "0");
 }
 
-// At UTC midnight we shuffle both arrays with date-seeded RNGs and assign
-// the first 24 entries to the 24 hours of that day. Hour N reads from
-// position N. Two distinct seeds (one for messages, one for locations) so
-// they don't lock-step — otherwise message #i and location #i would always
-// pair together, which would feel less alive over multiple days.
-function getBottleForHour(date) {
+// At UTC midnight we shuffle both arrays with date-seeded RNGs. The day
+// is divided into 48 half-hour slots (0..47) and slot N reads position N
+// of the shuffled message array — so all 48 BOTTLE_MESSAGES get airtime
+// every day, instead of only the first 24 (the previous hourly version
+// surfaced just half the pool per day, which caused noticeable repetition
+// for visitors checking back during the same UTC day).
+//
+// BOTTLE_OCEAN_LOCATIONS still cycles `slot % length` — at 40 locations
+// vs 48 slots, the last 8 slots of the day reuse the first 8 locations.
+// That's acceptable and intentional; locations repeating is less salient
+// than messages repeating.
+//
+// Two distinct seeds (one for messages, one for locations) so they don't
+// lock-step — otherwise message #i and location #i would always pair
+// together, which would feel less alive over multiple days.
+function getBottleForSlot(date) {
   const dateStr = bottleUtcDateString(date);
-  const hour = date.getUTCHours();
+  // 48 slots per UTC day, each 30 minutes wide.
+  const slot = date.getUTCHours() * 2 + (date.getUTCMinutes() >= 30 ? 1 : 0);
   const seedBase = bottleHashSeed(dateStr);
   const rngMessages = bottleMulberry32(seedBase);
   const rngLocations = bottleMulberry32((seedBase ^ 0x9E3779B9) >>> 0);
   const shuffledMessages = bottleSeededShuffle(BOTTLE_MESSAGES, rngMessages);
   const shuffledLocations = bottleSeededShuffle(BOTTLE_OCEAN_LOCATIONS, rngLocations);
   return {
-    hour,
+    slot,
     dateStr,
-    message: shuffledMessages[hour % shuffledMessages.length],
-    location: shuffledLocations[hour % shuffledLocations.length]
+    message: shuffledMessages[slot % shuffledMessages.length],
+    location: shuffledLocations[slot % shuffledLocations.length]
   };
 }
 
@@ -4403,7 +4414,7 @@ function bottleIconHtml() {
 // until they close the popup — the spec calls for the open popup to keep
 // showing its own bottle until dismissed.
 function placeBottle() {
-  const bottle = getBottleForHour(new Date());
+  const bottle = getBottleForSlot(new Date());
   const previous = bottleCurrent;
   bottleCurrent = bottle;
 
@@ -4436,9 +4447,9 @@ function placeBottle() {
     return;
   }
 
-  // Marker exists; only move it if the hour actually changed.
+  // Marker exists; only move it if the slot actually changed.
   if (previous &&
-      previous.hour === bottle.hour &&
+      previous.slot === bottle.slot &&
       previous.dateStr === bottle.dateStr) {
     return;
   }
@@ -4467,19 +4478,25 @@ function placeBottle() {
   }, 500);
 }
 
-// Schedule the next refresh at the top of the next UTC hour. We add a small
-// buffer (250ms) so we're past the hour boundary when getBottleForHour()
-// reads `new Date().getUTCHours()` and don't accidentally re-pick the
-// previous hour due to clock skew.
-function scheduleBottleHourTick() {
+// Schedule the next refresh at the next half-hour boundary (:00 or :30
+// UTC, whichever comes first). 250ms buffer past the boundary so we're
+// past it when getBottleForSlot() reads `new Date()` and don't accidentally
+// re-pick the previous slot due to clock skew. Renamed from
+// scheduleBottleHourTick when the bottle moved from hourly (24 slots) to
+// half-hourly (48 slots) to give all 48 BOTTLE_MESSAGES daily airtime.
+function scheduleBottleTick() {
   if (bottleHourTimer) clearTimeout(bottleHourTimer);
   const now = new Date();
   const next = new Date(now);
-  next.setUTCHours(now.getUTCHours() + 1, 0, 0, 250);
+  if (now.getUTCMinutes() < 30) {
+    next.setUTCMinutes(30, 0, 250);
+  } else {
+    next.setUTCHours(now.getUTCHours() + 1, 0, 0, 250);
+  }
   const ms = Math.max(1000, next.getTime() - now.getTime());
   bottleHourTimer = setTimeout(() => {
     placeBottle();
-    scheduleBottleHourTick();
+    scheduleBottleTick();
   }, ms);
 }
 
@@ -4818,9 +4835,10 @@ function placeTreasureChest() {
   treasureChestMarker.setLatLng([chest.location.lat, chest.location.lng]);
 }
 
-// Schedule the next refresh at the top of the next UTC hour. Mirror
-// of `scheduleBottleHourTick` — same +250ms buffer past the boundary
-// to dodge clock-skew false-reads of the previous hour.
+// Schedule the next refresh at the top of the next UTC hour. Same
+// +250ms buffer past the boundary as scheduleBottleTick, but the
+// chest stays on the original hourly cadence — only the bottle
+// moved to half-hourly slots.
 function scheduleTreasureChestHourTick() {
   if (treasureChestHourTimer) clearTimeout(treasureChestHourTimer);
   const now = new Date();
@@ -7444,7 +7462,7 @@ function buildCastSection(msg, wrap) {
   // down or the messages fetch fails.
   placeBottle();
   if (!map.hasLayer(bottleLayer)) bottleLayer.addTo(map);
-  scheduleBottleHourTick();
+  scheduleBottleTick();
 
   // Boot fetch for the current hour's chest claim. Done before
   // `placeTreasureChest()` so the chest's grayed-out state and the
