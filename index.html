@@ -23,6 +23,18 @@
 
 <title>Hello, World</title>
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+
+<!-- PWA: manifest + iOS home-screen icon + iOS standalone-mode hints. The
+     manifest covers Android/Chrome install behavior; the apple-* tags
+     cover iOS Safari "Add to Home Screen" since iOS doesn't read most
+     manifest fields. theme-color tints the address bar / task switcher
+     to match the app's dark navy chrome. -->
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="dropadot" />
+<meta name="theme-color" content="#0a1929" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
