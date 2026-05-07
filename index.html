@@ -674,10 +674,13 @@
   }
   #langBtn:hover { color: rgba(255, 255, 255, 0.7); }
 
-  /* Coffee link — Ko-fi support, quiet icon-only button matching the
-     translate (langBtn) treatment so the nav stays calm. Sits to the
-     left of THE RULES pill. */
-  #coffeeBtn {
+  /* Mood (globe) button — quiet icon-only nav button matching the
+     translate (langBtn) treatment so the nav stays calm. Sits between
+     THE RULES pill and the translate icon. Tap opens the "our mood
+     today" modal. Replaced the older Ko-fi coffee icon that lived in
+     the same slot; the donate link still exists inside the Rules
+     modal as a hairline footer link. */
+  #moodBtn {
     background: transparent;
     border: none;
     padding: 4px;
@@ -687,11 +690,10 @@
     align-items: center;
     justify-content: center;
     border-radius: 4px;
-    text-decoration: none;
     transition: color 0.15s;
   }
-  #coffeeBtn:hover { color: rgba(255, 255, 255, 0.7); }
-  #coffeeBtn svg { width: 21px; height: 21px; display: block; }
+  #moodBtn:hover { color: rgba(255, 255, 255, 0.7); }
+  #moodBtn svg { width: 21px; height: 21px; display: block; }
 
   /* "The rules" pill — stroked border, no fill. Text color cycles through
      the mood palette via moodCycle (same animation the reset timer uses), so
@@ -1080,28 +1082,6 @@
     background: rgba(255, 255, 255, 0.06);
   }
   #flareBtn svg { width: 22px; height: 22px; display: block; }
-
-  /* "Our mood" button — same 58×58 circle pattern as dropBtn/flareBtn but
-     neutral-tinted so the trio reads as primary / primary / tertiary. */
-  #moodBtn {
-    width: 58px; height: 58px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.85);
-    cursor: pointer;
-    transition: transform 0.15s ease, background 0.15s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-  }
-  #moodBtn:hover {
-    transform: scale(1.07);
-    background: rgba(255, 255, 255, 0.12);
-  }
-  #moodBtn:active { transform: scale(0.96); }
-  #moodBtn svg { width: 20px; height: 20px; display: block; }
 
   /* Cast button — dormant by default (dim, non-interactive look). When a
      cross-continental dot popup is open AND the viewer can cast (has
@@ -2087,14 +2067,14 @@
   </div>
   <div class="nav-right">
     <button id="helpBtn" type="button" aria-label="the rules">the rules</button>
-    <a id="coffeeBtn" href="https://ko-fi.com/thinksubliminal" target="_blank" rel="noopener noreferrer" aria-label="buy me a coffee">
+    <button id="moodBtn" type="button" aria-label="our mood today">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M4 9h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V9z"/>
-        <path d="M16 11h2a3 3 0 0 1 0 6h-2"/>
-        <path d="M7 3.5v2"/>
-        <path d="M11 3.5v2"/>
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M3 12h18"/>
+        <path d="M12 3a14 14 0 0 1 0 18"/>
+        <path d="M12 3a14 14 0 0 0 0 18"/>
       </svg>
-    </a>
+    </button>
     <button id="langBtn" type="button" aria-label="translation language" aria-haspopup="true" aria-expanded="false">
       <span class="nav-icon nav-icon-translate" aria-hidden="true"></span>
     </button>
@@ -2121,14 +2101,6 @@
       </svg>
     </button>
     <button id="castBtn" type="button" aria-label="cast (open a cross-continental dot to enable)" hidden></button>
-    <button id="moodBtn" type="button" aria-label="our mood today">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9"/>
-        <path d="M3 12h18"/>
-        <path d="M12 3a14 14 0 0 1 0 18"/>
-        <path d="M12 3a14 14 0 0 0 0 18"/>
-      </svg>
-    </button>
   </div>
 </div>
 
