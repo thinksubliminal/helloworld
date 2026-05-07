@@ -7268,7 +7268,37 @@ function buildCastSection(msg, wrap) {
     return section;
   }
 
-  // CASE D: nothing relevant.
+  // ── CASE D: viewing a dot that received a cast, viewer is      ──
+  // ── neither the sender nor the receiver (the common case for   ──
+  // ── any third-party visitor — also covers the same person      ──
+  // ── viewing from a different device, since identity is local-  ──
+  // ── storage-bound and theres no cross-device auth). Render     ──
+  // ── the Q&A read-only so the marching-ants line on the map     ──
+  // ── isnt visually orphaned from its content. Mirrors how flare ──
+  // ── Q&A is publicly visible to anyone viewing the flare popup. ──
+  if (incoming) {
+    const section = makeSection();
+    const q = document.createElement("div");
+    q.className = "flare-popup-q";
+    q.textContent = incoming.question;
+    section.appendChild(q);
+    if (incoming.answer) {
+      const a = document.createElement("div");
+      a.className = "flare-popup-response";
+      a.style.marginTop = "12px";
+      a.textContent = incoming.answer;
+      section.appendChild(a);
+    } else {
+      const locked = document.createElement("div");
+      locked.className = "flare-popup-locked";
+      locked.textContent = "awaiting reply to cast";
+      section.appendChild(locked);
+    }
+    wrap.appendChild(section);
+    return section;
+  }
+
+  // CASE E: nothing relevant.
   return null;
 }
 
