@@ -1913,9 +1913,10 @@
      case if they don't touch anything. */
   #hwToggle {
     position: fixed;
-    bottom: 24px;
-    left: 24px;
-    width: 230px;
+    bottom: 200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 280px;
     z-index: 600;
     display: block;
     border-radius: 8px;
@@ -1927,6 +1928,12 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
     text-align: left;
     color: rgba(255, 255, 255, 0.85);
+  }
+  /* Pagination dots hidden on desktop — auto-advance handles rotation,
+     and without swipe the dots felt redundant. Mobile keeps them since
+     swipe + dots are the primary navigation there. */
+  @media (min-width: 640px) {
+    .hw-car-pages { display: none !important; }
   }
   #hwToggle.empty { display: none !important; }
   .hw-car-header {
@@ -2058,7 +2065,7 @@
 
   @media (max-width: 639px) {
     /* Mobile carousel positioning — override the desktop default
-       (bottom-left fixed card) into a top-of-screen full-width
+       (centered above the toolbar) into a top-of-screen full-width
        banner that pairs with where the zoom controls used to sit.
        hwPanel stays hidden here because the global rule above
        already hides it on every viewport. */
@@ -2068,6 +2075,7 @@
       left: 14px;
       right: 14px;
       width: auto;
+      transform: none;
     }
     .leaflet-control-zoom { display: none !important; }
 
