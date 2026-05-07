@@ -25,5 +25,5 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 SELECT cron.schedule(
   'midnight-utc-reset',
   '0 0 * * *',
-  $$ TRUNCATE TABLE flare_responses, flares, messages, chest_claims; $$
+  $$ TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims; $$
 );

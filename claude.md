@@ -480,27 +480,78 @@ ALTER POLICY "anyone can answer an unanswered ping" ON casts RENAME TO "anyone c
 - **Muted dots are excluded from the candidate pool** — see Personal mute
   section below.
 
-## Personal mute (eye icon on dot popups)
-- Tap the eye icon (top-right of any dot popup) → message text blurs,
-  eye toggles to closed. Tap again → unblurs, eye reopens. Pure visual
-  toggle, dot stays on the map either way.
+## Per-message actions menu (kebab on dot popups)
+- Top-right of every dot popup is a kebab (three vertical dots) button
+  that opens a small dropdown with **Blur** and **Report**. Replaced
+  the older single-purpose eye icon so the action set can grow without
+  crowding the popup chrome.
+- Click-outside-to-close: the menu adds a `document` click listener on
+  open and tears it down on close. The listener is added via
+  `setTimeout(0)` so the same click that opens the menu doesn't
+  immediately close it. Menu item handlers all call `closeMenu()`.
+
+### Blur (personal mute)
+- Tap **Blur** → message text blurs, menu item flips to **Unblur**.
+  Tap again → unblurs. Pure visual toggle, dot stays on the map either
+  way.
 - **Local only.** Stored in `localStorage` under key `hw-muted-ids` as
   a JSON array of message UUIDs. No Supabase column, no server state,
-  no record exists that anyone muted anything.
+  no record exists that anyone blurred anything.
 - Other visitors are completely unaffected — they see the dot normally
   in popups and in their own Heard panel rotation.
 - Muted IDs are also filtered out of the Heard Around the World pool so
   the side panel respects the same gesture (`renderHeardPanel()` check).
 - Daily UTC midnight reset deletes the underlying messages, so any stale
   IDs in the localStorage list become harmless dead weight (no cleanup
-  needed; the list naturally caps at "today's muted dots").
-- Constants: `MUTED_KEY`, `mutedIds` Set, `MUTE_ICON_OPEN`,
-  `MUTE_ICON_CLOSED`, `loadMutedIds()`, `saveMutedIds()`, `toggleMuted()`
-  all live just before `buildPopup()`.
-- This is a **personal mute, not a report.** It hides the message from
-  YOUR view; it does not flag the dot for moderation or affect what
-  other visitors see. If genuine moderation is ever needed, that's a
-  separate path (manual delete in Supabase per the terms).
+  needed; the list naturally caps at "today's blurred dots").
+- Constants: `MUTED_KEY`, `mutedIds` Set, `loadMutedIds()`,
+  `saveMutedIds()`, `toggleMuted()` all live just before `buildPopup()`.
+
+### Report
+- Tap **Report** → fire-and-forget INSERT into the public `reports`
+  table (`message_id` + `created_at`), then a `flashHint` toast
+  ("reported. thanks." on success, "report failed. try again later."
+  on any error). One-tap, no confirmation modal — accidental reports
+  are cheap to ignore in the queue.
+- RLS: anyone can INSERT. **No SELECT policy** → reports are admin-only
+  via the Supabase dashboard; the public can never read who flagged
+  what. No reason field in v1; if triage signal becomes needed, add
+  a `reason text` column and an enum-style dropdown in the menu.
+- `reports` is included in the midnight UTC TRUNCATE alongside
+  `messages` / `flares` / `casts` / etc. — reports older than 24h
+  are useless context anyway (the underlying message is gone).
+- Triage workflow: scan `SELECT message_id, count(*) FROM reports
+  GROUP BY message_id ORDER BY count(*) DESC` during launch / spike
+  windows; `DELETE FROM messages WHERE id IN (...)` for anything
+  that needs to go.
+- This is the moderation primitive on top of the three write-time
+  blocks (hate-symbol codepoint, hate-phrase regex, single-word slur
+  redactor). Those catch the obvious cases at insert; reports catch
+  what slips past — including content that's policy-violating but
+  not slur/hate-pattern-matching (spam, harassment, off-topic).
+
+### One-time migration SQL (run in Supabase SQL editor)
+```sql
+-- Reports table for the per-message Report menu item.
+CREATE TABLE IF NOT EXISTS reports (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  message_id uuid NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anyone can insert reports" ON reports
+  FOR INSERT WITH CHECK (true);
+-- No SELECT policy on purpose: reports are admin-only signals.
+
+-- Update the midnight cron to TRUNCATE reports too. Idempotent —
+-- cron.schedule with an existing jobname replaces the schedule in
+-- place. Run this even if reports already existed.
+SELECT cron.schedule(
+  'midnight-utc-reset',
+  '0 0 * * *',
+  $$ TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims; $$
+);
+```
 
 ## Treasure chest (chosen-dot rendering)
 - Hourly mechanic: tapping the chest (when you've dropped today and no
