@@ -361,6 +361,37 @@ one cast per receiver per day, cross-continental only.
   `.flare-popup-respond-area`, etc.) so the visual treatment
   matches flare answers exactly.
 
+### Q&A visibility (public)
+- The cast Q&A is visible to **every visitor** opening the receiver
+  dot's popup, not just the sender or receiver. Same model as
+  flare Q&A (anyone viewing a flare popup sees the question and
+  the response). The polyline on the map was already public; the
+  Q&A is now public to match.
+- `buildCastSection` cases:
+  - **A** — viewer is the receiver (`isMine` and `incoming`):
+    show the question + answer form (so the receiver can answer
+    on the device that owns the dot's `mine` flag).
+  - **B** — viewer is the sender (`myCast.receiver_dot_id ===
+    msg.id` via the `hw-casted-today` localStorage key): show
+    the question + the answer (or "awaiting reply to cast"
+    placeholder).
+  - **C** — viewer is a potential sender who tapped the toolbar
+    `#castBtn` for this dot: show the inline send form.
+  - **D** — none of the above, but `castsByReceiver` has an
+    entry for this dot: render the question + answer (or the
+    "awaiting reply" placeholder) **read-only**. This is the
+    catch-all that makes the Q&A public to third-party visitors
+    AND to the same person viewing from a second device (since
+    identity is localStorage-bound and there's no cross-device
+    auth — without case D, the marching-ants line draws but the
+    Q&A is silently blank from any browser other than the one
+    that originally sent or received it).
+- This is the right default for the app: see the public-by-
+  default principle in the project memory. Action capability
+  (sending, answering) stays scoped to the device that holds
+  the relevant localStorage; only **content visibility** is
+  universal.
+
 ### Map line rendering
 - Polyline drawn in `castLayer` (Leaflet layer group). Endpoints
   shortened **7 pixels short** of each dot center along the line's
