@@ -349,6 +349,17 @@
   }
   .msg-actions-menu button:hover { background: rgba(255, 255, 255, 0.06); }
   .msg-actions-menu button:disabled { opacity: 0.5; cursor: default; }
+  /* Inline confirmation that briefly replaces the menu items after a
+     report is submitted. Sits in the same dropdown box so the feedback
+     lands right under the user's finger — much closer than the bottom
+     flashHint toast was. */
+  .msg-actions-status {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.85);
+    white-space: nowrap;
+  }
+  .msg-actions-status.err { color: #ff8585; }
   .msg-text.muted {
     filter: blur(5px);
     user-select: none;
@@ -4235,11 +4246,21 @@ function buildPopup(msg) {
   reportBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     e.preventDefault();
-    closeMenu();
+    // Lock both items while the request is in flight so the user
+    // cannot stack reports or toggle blur on a half-submitted state.
     reportBtn.disabled = true;
+    blurBtn.disabled = true;
     const ok = await reportMessage(msg.id);
-    reportBtn.disabled = false;
-    flashHint(ok ? "reported. thanks." : "report failed. try again later.");
+    // Replace the menu items with an inline confirmation so the
+    // feedback shows up right where the user just tapped, then
+    // close after a beat. Re-opening the popup or the menu later
+    // rebuilds buildPopup from scratch, so the swap doesnt leave
+    // stale state behind.
+    menu.innerHTML =
+      `<div class="msg-actions-status${ok ? "" : " err"}">` +
+        (ok ? "reported. thanks." : "report failed. try again.") +
+      `</div>`;
+    setTimeout(closeMenu, 1300);
   });
 
   // First-time path: kick off the fetch and replace the text when it resolves.
