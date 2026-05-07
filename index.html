@@ -7923,6 +7923,21 @@ function buildCastSection(msg, wrap) {
   // cycle even when no new dots are landing.
   startHeardRotation();
 })();
+
+// ───────────── PWA: service worker registration ─────────────
+// Registers /sw.js (Phase 2 PWA support) so the app shell can be served
+// from cache on subsequent launches. Wrapped in a feature check and
+// deferred to "load" so the SW install never competes with critical
+// first-paint resources. Failures are non-fatal — the site works fine
+// without a service worker, you just lose the instant-launch / offline
+// shell behavior.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((err) => {
+      console.warn("[sw] registration failed:", err);
+    });
+  });
+}
 </script>
 </body>
 </html>
