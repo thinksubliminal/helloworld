@@ -1913,7 +1913,7 @@
      case if they don't touch anything. */
   #hwToggle {
     position: fixed;
-    bottom: 44px;
+    bottom: 24px;
     left: 24px;
     width: 240px;
     z-index: 600;
@@ -1928,11 +1928,15 @@
     text-align: left;
     color: rgba(255, 255, 255, 0.85);
   }
-  /* Pagination dots hidden on desktop — auto-advance handles rotation,
-     and without swipe the dots felt redundant. Mobile keeps them since
-     swipe + dots are the primary navigation there. */
+  /* Desktop-only carousel cleanup: pagination dots are hidden because
+     auto-advance handles rotation and there's no swipe gesture on
+     desktop, so the dots felt redundant. The collapse chevron is also
+     hidden because there's plenty of room for the panel on desktop and
+     no real need to dismiss it; mobile keeps both since the carousel
+     starts collapsed there and dots pair with swipe. */
   @media (min-width: 640px) {
     .hw-car-pages { display: none !important; }
+    .hw-car-collapse { display: none !important; }
   }
   #hwToggle.empty { display: none !important; }
   .hw-car-header {
