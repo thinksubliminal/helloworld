@@ -7246,6 +7246,28 @@ function buildCastSection(msg, wrap) {
   const myCast = myCastId ? casts.find(p => p.id === myCastId) : null;
   const incoming = castsByReceiver.get(msg.id);
 
+  // Translation pipeline — mirrors buildFlarePopup. Paint cached or
+  // original text on first render via `optimistic`, then async-swap
+  // the real translation in via `replaceWhenReady` once the fetch
+  // resolves. Without this the dot text above gets translated but the
+  // cast question/answer text below stays in the source language.
+  const target = getCurrentLang();
+  const wantTranslate = target && target !== "off";
+  const optimistic = (text) => {
+    if (!wantTranslate || !text) return text || "";
+    return getTranslatedNow(text, target) || text;
+  };
+  const replaceWhenReady = (el, text) => {
+    if (!wantTranslate || !el || !text) return;
+    if (getTranslatedNow(text, target)) return;
+    translate(text, target).then((t) => {
+      if (!t || !t.trim()) return;
+      if (!el.isConnected || getCurrentLang() !== target) return;
+      if (el.textContent === t) return;
+      el.textContent = t;
+    });
+  };
+
   // ── Helpers ──────────────────────────────────────────────────────
   const stopBubble = (el) => {
     el.addEventListener("click", (ev) => ev.stopPropagation());
@@ -7317,15 +7339,17 @@ function buildCastSection(msg, wrap) {
     const section = makeSection();
     const q = document.createElement("div");
     q.className = "flare-popup-q";
-    q.textContent = incoming.question;
+    q.textContent = optimistic(incoming.question);
     section.appendChild(q);
+    replaceWhenReady(q, incoming.question);
 
     if (incoming.answer) {
       const a = document.createElement("div");
       a.className = "flare-popup-response";
       a.style.marginTop = "12px";
-      a.textContent = incoming.answer;
+      a.textContent = optimistic(incoming.answer);
       section.appendChild(a);
+      replaceWhenReady(a, incoming.answer);
     } else {
       const { area } = makeRespondArea("say something back...", "answer",
         (text) => answerCast(incoming.id, text));
@@ -7340,15 +7364,17 @@ function buildCastSection(msg, wrap) {
     const section = makeSection();
     const q = document.createElement("div");
     q.className = "flare-popup-q";
-    q.textContent = myCast.question;
+    q.textContent = optimistic(myCast.question);
     section.appendChild(q);
+    replaceWhenReady(q, myCast.question);
 
     if (myCast.answer) {
       const a = document.createElement("div");
       a.className = "flare-popup-response";
       a.style.marginTop = "12px";
-      a.textContent = myCast.answer;
+      a.textContent = optimistic(myCast.answer);
       section.appendChild(a);
+      replaceWhenReady(a, myCast.answer);
     } else {
       const locked = document.createElement("div");
       locked.className = "flare-popup-locked";
@@ -7385,14 +7411,16 @@ function buildCastSection(msg, wrap) {
     const section = makeSection();
     const q = document.createElement("div");
     q.className = "flare-popup-q";
-    q.textContent = incoming.question;
+    q.textContent = optimistic(incoming.question);
     section.appendChild(q);
+    replaceWhenReady(q, incoming.question);
     if (incoming.answer) {
       const a = document.createElement("div");
       a.className = "flare-popup-response";
       a.style.marginTop = "12px";
-      a.textContent = incoming.answer;
+      a.textContent = optimistic(incoming.answer);
       section.appendChild(a);
+      replaceWhenReady(a, incoming.answer);
     } else {
       const locked = document.createElement("div");
       locked.className = "flare-popup-locked";
