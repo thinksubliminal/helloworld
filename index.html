@@ -3379,7 +3379,20 @@ async function loadCountries() {
   }
 }
 
-// Inverted wheel zoom — swipe up always zooms in
+// Wheel zoom — "up gesture = zoom in" feel across platforms.
+//
+// The deltaY sign reported by browsers depends on whether the user's OS has
+// natural scrolling enabled, and there's no API to read that preference. So
+// we use a platform heuristic: macOS has shipped with natural scrolling on
+// by default since 2011, so on Mac we trust deltaY's raw sign (positive
+// deltaY from wheel forward / two-finger up means zoom in). Everywhere else
+// (Windows, Linux, ChromeOS) we invert deltaY so wheel forward — which is
+// negative deltaY there — also zooms in. Pinch (ctrlKey=true) is
+// platform-independent and always inverts since pinch-out gives negative
+// deltaY in every browser.
+//
+// Mac users who have turned natural scrolling OFF will get inverted behavior
+// — rare edge case, no clean fix without a UI toggle.
 map.scrollWheelZoom.disable();
 (function setupInvertedWheel() {
   let accum = 0;
@@ -3392,10 +3405,13 @@ map.scrollWheelZoom.disable();
   // Leaflet's own wheelPxPerZoomLevel default; pinch is bumped up.
   const PINCH_DIVISOR = 60;
   const WHEEL_DIVISOR = 150;
+  const IS_MAC_LIKE = /Mac|iPhone|iPad|iPod/.test(navigator.platform || "");
   map.getContainer().addEventListener("wheel", function (e) {
     e.preventDefault();
-    // Trackpad pinch fires wheel with ctrlKey=true — keep that natural (pinch out = zoom in)
-    const sign = e.ctrlKey ? -1 : 1;
+    // Pinch always sign -1 (pinch out = zoom in everywhere).
+    // Wheel sign depends on platform: keep raw on Mac (natural scrolling
+    // default), invert elsewhere so "wheel forward = zoom in" feels right.
+    const sign = e.ctrlKey ? -1 : (IS_MAC_LIKE ? 1 : -1);
     const divisor = e.ctrlKey ? PINCH_DIVISOR : WHEEL_DIVISOR;
     accum += (sign * e.deltaY) / divisor;
     lastEvent = e;
