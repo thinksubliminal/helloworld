@@ -64,6 +64,10 @@
     background: #ffffff;
   }
 
+  /* Desktop: nav floats directly on the map (no frosted card).
+     Mobile (<768px, matching the rest of the app's breakpoints):
+     restore the frosted glass card + hairline divider so the chrome
+     stays legible against busier dot/flare clusters at smaller sizes. */
   #topNav {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -75,6 +79,14 @@
     justify-content: space-between;
     padding: 0 18px;
     z-index: 700;
+  }
+  @media (max-width: 767px) {
+    #topNav {
+      background: rgba(8, 17, 25, 0.6);
+      -webkit-backdrop-filter: blur(12px);
+              backdrop-filter: blur(12px);
+      border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
+    }
   }
   #topNav .nav-left { display: flex; align-items: center; }
   #topNav .nav-right { display: flex; align-items: center; gap: 20px; }
