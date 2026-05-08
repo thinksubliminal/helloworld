@@ -402,12 +402,12 @@
     border: 0;
     padding: 0;
     cursor: pointer;
-    color: rgba(245, 184, 66, 0.55);
+    color: rgba(255, 158, 61, 0.55);
     transition: color 0.15s, transform 0.15s;
     z-index: 1;
   }
   .msg-cast-trigger:hover {
-    color: rgba(245, 184, 66, 0.95);
+    color: rgba(255, 158, 61, 0.95);
     transform: scale(1.08);
   }
   .msg-cast-trigger svg { width: 14px; height: 14px; display: block; }
@@ -418,11 +418,11 @@
      A normal tap on mobile still triggers the inline message in the
      section, so users without hover capability also discover the rule. */
   .msg-cast-trigger.disabled {
-    color: rgba(245, 184, 66, 0.22);
+    color: rgba(255, 158, 61, 0.22);
     cursor: not-allowed;
   }
   .msg-cast-trigger.disabled:hover {
-    color: rgba(245, 184, 66, 0.32);
+    color: rgba(255, 158, 61, 0.32);
     transform: none;
   }
   /* Marching-ants animation on pending cast lines. The polyline is an
@@ -834,8 +834,8 @@
   .help-icon-cast {
     width: 13px; height: 13px;
     flex-shrink: 0;
-    color: #F5B842;
-    filter: drop-shadow(0 0 5px rgba(245, 184, 66, 0.5));
+    color: #ff9e3d;
+    filter: drop-shadow(0 0 5px rgba(255, 158, 61, 0.5));
   }
   /* Same four-pointed sparkle as the flare icon, neutral white — used by
      "THE SPIRIT" section so it visually rhymes with FLARES without being
@@ -1090,50 +1090,49 @@
   }
   #flareBtn svg { width: 22px; height: 22px; display: block; }
 
-  /* Cast button — dormant by default (dim, non-interactive look). When a
-     cross-continental dot popup is open AND the viewer can cast (has
-     dropped, hasn't cast today, target not yet cast to), it gets the
-     .active class which restores full opacity + adds a soft gold glow.
-     Only visible when ?cast=1 (the boot script removes the [hidden]
-     attribute then). */
+  /* Cast button — three-state: locked when the visitor can't cast at
+     all today (no dot dropped or already cast); resting amber when
+     they CAN cast today but no valid target popup is open; active
+     amber-glow when a cross-continental, not-yet-cast-to dot popup
+     is open. Mirrors the flare button's locked / resting / active
+     pattern exactly so both feel like the same vocabulary. */
   #castBtn {
     width: 58px; height: 58px;
     border-radius: 50%;
     border: 1.5px solid transparent;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.4);
-    cursor: not-allowed;
-    /* All visual properties share the same easing + duration so the
-       active → dormant fade resolves as one motion rather than a
-       staggered flicker. Slowed to 0.4s so the cross-property
-       interpolation reads as a deliberate fade rather than a quick
-       blink. Transform stays a touch faster so press/hover feel snappy. */
-    transition:
-      background   0.4s ease-out,
-      box-shadow   0.4s ease-out,
-      color        0.4s ease-out,
-      border-color 0.4s ease-out,
-      opacity      0.4s ease-out,
-      transform    0.15s ease;
+    background: rgba(255, 158, 61, 0.15);
+    color: #ff9e3d;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease,
+                border-color 0.15s ease, color 0.2s ease,
+                box-shadow 0.2s ease, opacity 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+  }
+  #castBtn:hover {
+    transform: scale(1.08);
+    background: rgba(255, 158, 61, 0.22);
+  }
+  #castBtn:active { transform: scale(0.94); }
+  #castBtn.locked {
     opacity: 0.55;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.5);
+  }
+  #castBtn.locked:hover {
+    transform: none;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  #castBtn.active {
+    background: rgba(255, 158, 61, 0.25);
+    border-color: #ff9e3d;
+    color: #ffd9a5;
+    box-shadow: 0 0 18px rgba(255, 158, 61, 0.35);
   }
   #castBtn svg { width: 22px; height: 22px; display: block; }
-  #castBtn.active {
-    background: rgba(245, 184, 66, 0.15);
-    border-color: transparent;
-    color: #F5B842;
-    cursor: pointer;
-    opacity: 1;
-  }
-  #castBtn.active:hover {
-    transform: scale(1.08);
-    background: rgba(245, 184, 66, 0.22);
-  }
-  #castBtn.active:active { transform: scale(0.94); }
   /* Marching-ants animation on the cast icon's outer ring. The
      <circle> uses pathLength="80" with stroke-dasharray="3 7", so
      one full dash + gap cycle is 10 units. Animating stroke-dashoffset
@@ -5968,6 +5967,7 @@ async function submit() {
   syncDropPrompt();
   scheduleHeardPanelRender();
   syncFlareBtn();
+  updateCastBtnState();
   if (window.syncRealmBtn) window.syncRealmBtn();
 }
 
@@ -6469,6 +6469,7 @@ if (IS_DEV_MODE) {
     syncDropPrompt();
     scheduleHeardPanelRender();
     syncFlareBtn();
+    updateCastBtnState();
     if (window.syncRealmBtn) window.syncRealmBtn();
     console.log("%c[dev] resetMyDot: localStorage cleared, ready for a new drop", "color:#888");
     return "ok";
@@ -7541,8 +7542,8 @@ let castFormOpenForId = null; // id of the dot whose popup should show
                               // popup close or successful send)
 
 const CAST_KEY = "hw-casted-today";   // localStorage: { date, castId }
-const CAST_LINE_COLOR = "#F5B842";    // pending: bright chest gold
-const CAST_LINE_COLOR_ANSWERED = "#A87C32"; // answered: muted darker gold,
+const CAST_LINE_COLOR = "#ff9e3d";    // pending: bright flare amber
+const CAST_LINE_COLOR_ANSWERED = "#a86328"; // answered: muted darker amber,
                                             // sits in the same warm family
                                             // as the flare amber #FF9E3D
 const CAST_LINE_SHORTEN_PX = 7;       // pixels short of each dot center
@@ -7878,23 +7879,41 @@ function updateCastBtnState() {
   // non-test visitors see the original three-button toolbar.
   if (!IS_CAST_ENABLED) {
     castBtn.hidden = true;
-    castBtn.classList.remove("active");
+    castBtn.classList.remove("active", "locked");
     return;
   }
   castBtn.hidden = false;
 
+  // ── LOCKED ──────────────────────────────────────────────────────
+  // Mirrors the flare button gate: dim when the visitor can't use the
+  // feature today at all (no dot dropped yet, or already cast).
+  const dropped = hasDroppedToday();
+  const myCastId = loadMyCastId();
+  const alreadyCast = !!(myCastId && casts.find(p => p.id === myCastId));
+  if (!dropped || alreadyCast) {
+    castBtn.classList.add("locked");
+    castBtn.classList.remove("active");
+    const lockedLabel = !dropped
+      ? "drop a dot first to enable casting"
+      : "you've already cast your line today";
+    castBtn.setAttribute("aria-label", lockedLabel);
+    castBtn.setAttribute("title", lockedLabel);
+    return;
+  }
+  castBtn.classList.remove("locked");
+
+  // ── ACTIVE vs RESTING ──────────────────────────────────────────
+  // Resting amber means "you can cast today, just need a target."
+  // Active glow means "you've opened a valid target — tap to cast."
   let active = false;
-  let label = "cast (open a cross-continental dot to enable)";
+  let label = "open a dot across the ocean to cast";
   do {
     if (!currentOpenDotId) break;
     const msg = messages.find(m => m.id === currentOpenDotId);
     if (!msg) break;
     if (msg.mine) { label = "you can't cast to your own dot"; break; }
     const myDot = messages.find(m => m.mine);
-    if (!myDot) { label = "drop a dot first to enable casting"; break; }
-    const myCastId = loadMyCastId();
-    const myCast = myCastId ? casts.find(p => p.id === myCastId) : null;
-    if (myCast) { label = "you've already cast your line today"; break; }
+    if (!myDot) break; // unreachable: `dropped` is already true above
     if (castsByReceiver.get(msg.id)) { label = "this dot has already been cast to"; break; }
     const myCont  = myDot.continent || continentFromLatLng(myDot.lat,  myDot.lng);
     const msgCont = msg.continent   || continentFromLatLng(msg.lat,    msg.lng);
@@ -8304,6 +8323,7 @@ function buildCastSection(msg, wrap) {
 
   renderHeardPanel();
   syncFlareBtn();
+  updateCastBtnState();
   if (window.syncRealmBtn) window.syncRealmBtn();
 
   // Flares.
