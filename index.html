@@ -1196,16 +1196,15 @@
   }
 
   /* Drawing Realm overlay — full-screen frosted glass over the map.
-     Same recipe as #hwToggle / #topNav / #bottomActions so the realm
-     reads as part of the same material system; the map peeks through
-     the blur so the realm feels layered on top of the world rather
-     than a separate page. The actual drawing/mosaic canvases stay
-     solid navy so artwork has a real surface to land on. */
+     Background + blur match the rules modal (.helpModal) exactly so
+     the realm reads as part of the same material system. The actual
+     drawing/mosaic canvases stay solid navy so artwork has a real
+     surface to land on. */
   #realmOverlay {
     position: fixed; inset: 0;
-    background: rgba(5, 12, 22, 0.6);
-    -webkit-backdrop-filter: blur(12px);
-            backdrop-filter: blur(12px);
+    background: rgba(10, 18, 30, 0.55);
+    -webkit-backdrop-filter: blur(3px);
+            backdrop-filter: blur(3px);
     z-index: 1200;
     display: flex;
     flex-direction: column;
@@ -1252,9 +1251,9 @@
     touch-action: manipulation;
     --cols: 10;
     --rows: 10;
-    width:      min(96vw, calc(62vh * var(--cols) / var(--rows)));
-    height:     min(62vh, calc(96vw * var(--rows) / var(--cols)));
-    max-width:  96vw;
+    width:      min(88vw, calc(62vh * var(--cols) / var(--rows)));
+    height:     min(62vh, calc(88vw * var(--rows) / var(--cols)));
+    max-width:  88vw;
     max-height: 62vh;
   }
   /* Title + subtitle stack as in-flow flex children of the wrap, so
@@ -1385,9 +1384,9 @@
     left: auto; right: auto; top: auto; bottom: auto;
   }
   #realmOverlay.portrait-grid #realmMosaicCanvas {
-    width:      96vw;
-    height:     calc(96vw * var(--rows) / var(--cols));
-    max-width:  96vw;
+    width:      88vw;
+    height:     calc(88vw * var(--rows) / var(--cols));
+    max-width:  88vw;
     max-height: none;
   }
 
@@ -9388,6 +9387,19 @@ function buildCastSection(msg, wrap) {
         exitDrawMode();
       });
     }
+
+    // Click-outside-to-close in mosaic mode: tapping anywhere outside
+    // the mosaic canvas (and outside the back-to-map button, which
+    // does the same thing on its own) closes the realm and returns to
+    // the map. Skipped while in draw / view mode — those have their
+    // own outside-tap handlers that dismiss to the mosaic, not all
+    // the way to the map.
+    elOverlay.addEventListener("click", (e) => {
+      if (elOverlay.classList.contains("draw-mode")) return;
+      if (elOverlay.classList.contains("view-mode")) return;
+      if (e.target.closest("#realmMosaicCanvas, #realmBack")) return;
+      closeRealm();
+    });
 
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && isOpen) {
