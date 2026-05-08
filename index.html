@@ -4713,10 +4713,15 @@ function addDotMarker(msg) {
     if (el) { const d = el.querySelector(".dot"); if (d) d.classList.add("expanded"); }
     dotCanvas.setExpanded(msg.id, true);
     // Track which dot popup is currently open so the toolbar #castBtn
-    // can target it. Reset cast-form state so opening a fresh popup
-    // doesn't inherit the previous popup's "form open" flag.
+    // can target it. Always reset cast-form state on any popup open —
+    // the previous "if not same dot" guard left a window on mobile
+    // where the flag could leak across popups (the cast question form
+    // would auto-render in a new dot's popup without the user tapping
+    // cast). A dismiss is treated as a full abandon; tapping a dot
+    // again starts fresh — re-tap the cast button to bring the form
+    // back.
     currentOpenDotId = msg.id;
-    if (castFormOpenForId !== msg.id) castFormOpenForId = null;
+    castFormOpenForId = null;
     updateCastBtnState();
     // Defer the scrollHeight read (forces layout) and clampable wiring out of the
     // click frame so tap → popup feels instant, then we set up clamping next tick.
