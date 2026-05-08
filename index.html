@@ -768,6 +768,13 @@
     border-radius: 12px;
     padding: 24px 26px 20px;
     width: min(420px, 100%);
+    /* Cap the cards height to the viewport and let it scroll
+       internally when the rules content gets long enough to overflow.
+       Whole card scrolls including the eyebrow + title — simpler
+       than fixing the header since theres no close button to keep
+       in view (backdrop tap and Esc are the only dismiss paths). */
+    max-height: 88vh;
+    overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     transform: translateY(10px);
     transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
