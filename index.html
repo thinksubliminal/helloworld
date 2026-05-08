@@ -1132,10 +1132,11 @@
     animation: castIconMarch 1.4s linear infinite;
   }
 
-  /* "Our mood" modal — same blurred-overlay + frosted-card pattern as
-     #helpModal (the Rules modal), duplicated under its own selectors so the
-     Rules modal can stay untouched. Open/close via .open class with the
-     same opacity + transform timing. */
+  /* Globe modal — full-screen blurred overlay over the map. The card
+     grows to a tall narrow column with internal scrolling so it can
+     hold mood stats at the top plus a scrollable list of every
+     continent's messages below. Same .open transition pattern as the
+     Rules modal. */
   #moodModal {
     position: fixed; inset: 0;
     background: rgba(10, 18, 30, 0.55);
@@ -1157,13 +1158,101 @@
             backdrop-filter: blur(16px);
     border: 0.5px solid rgba(255, 255, 255, 0.12);
     border-radius: 12px;
-    padding: 24px 26px 20px;
-    width: min(360px, 100%);
+    padding: 0;
+    width: min(560px, 92vw);
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     transform: translateY(10px);
     transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    position: relative;
+    overflow: hidden;
   }
   #moodModal.open .mood-card { transform: translateY(0); }
+  .mood-card-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 50%;
+    z-index: 2;
+    transition: color 0.15s, background 0.15s;
+    padding: 0;
+  }
+  .mood-card-close:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .mood-card-scroll {
+    overflow-y: auto;
+    padding: 24px 26px 22px;
+    flex: 1 1 auto;
+    /* Reserve a bit of right gutter so the close button doesn't sit
+       directly over the eyebrow text on first paint. */
+    padding-right: 26px;
+  }
+  /* Hairline divider between the mood-stats block and the continent
+     list below. Matches the same low-opacity stroke used on .mood-row
+     and the flare-popup divider. */
+  .globe-section-divider {
+    height: 0.5px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 18px 0 6px;
+  }
+  /* Continent section — header label + list of messages dropped in
+     that continent today. Empty continents show a quiet placeholder
+     instead of being hidden, so the structure of the modal stays
+     consistent. */
+  .globe-continent {
+    margin-top: 18px;
+  }
+  .globe-continent-name {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+  .globe-continent-empty {
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, 0.28);
+    font-style: italic;
+    padding: 4px 0 6px;
+  }
+  .globe-msg {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 0.5px solid rgba(255, 255, 255, 0.05);
+  }
+  .globe-continent .globe-msg:first-of-type { border-top: none; padding-top: 4px; }
+  .globe-msg-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--c, #999);
+    margin-top: 6px;
+  }
+  .globe-msg-text {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.82);
+    line-height: 1.45;
+    word-break: break-word;
+  }
   .mood-eyebrow {
     font-size: 10px;
     letter-spacing: 0.16em;
@@ -2178,8 +2267,11 @@
 
 <div id="moodModal" role="dialog" aria-modal="true" aria-labelledby="moodModalTitle">
   <div class="mood-card">
-    <div id="moodModalTitle" class="mood-eyebrow">the world feels...</div>
-    <div id="moodModalBody"></div>
+    <button id="moodModalClose" class="mood-card-close" type="button" aria-label="close">&times;</button>
+    <div class="mood-card-scroll">
+      <div id="moodModalTitle" class="mood-eyebrow">the world feels...</div>
+      <div id="moodModalBody"></div>
+    </div>
   </div>
 </div>
 
@@ -5866,9 +5958,18 @@ if (IS_DEV_MODE) {
   const btn = document.getElementById("moodBtn");
   const modal = document.getElementById("moodModal");
   const body = document.getElementById("moodModalBody");
+  const closeBtn = document.getElementById("moodModalClose");
   if (!btn || !modal || !body) return;
 
-  function buildBody() {
+  // Fixed continent order for the list. Always rendered in this order
+  // even when a continent has no messages today, so the modal's
+  // structure is stable and predictable from open to open.
+  const CONTINENT_ORDER = [
+    "North America", "South America", "Europe",
+    "Africa", "Asia", "Oceania", "Antarctica"
+  ];
+
+  function buildMoodStats() {
     const counts = new Map();
     for (const m of messages) {
       if (!m.mood) continue;
@@ -5897,6 +5998,41 @@ if (IS_DEV_MODE) {
     }).join("");
   }
 
+  function buildContinentSections() {
+    // Group today's messages by continent. Use the stored continent
+    // field if present, fall back to deriving from lat/lng so older
+    // rows without the column still place correctly.
+    const byContinent = new Map();
+    for (const m of messages) {
+      const c = m.continent || continentFromLatLng(m.lat, m.lng);
+      if (!byContinent.has(c)) byContinent.set(c, []);
+      byContinent.get(c).push(m);
+    }
+    return CONTINENT_ORDER.map(continent => {
+      const msgs = byContinent.get(continent) || [];
+      const rows = msgs.length === 0
+        ? `<div class="globe-continent-empty">no voices yet</div>`
+        : msgs.map(m => {
+            const mood = MOOD_BY_ID[m.mood];
+            const color = mood?.color || "#999";
+            return `<div class="globe-msg">` +
+                     `<span class="globe-msg-dot" style="--c:${color}"></span>` +
+                     `<span class="globe-msg-text">${escapeHtml(m.text || "")}</span>` +
+                   `</div>`;
+          }).join("");
+      return `<section class="globe-continent">` +
+               `<h3 class="globe-continent-name">${escapeHtml(continent)}</h3>` +
+               rows +
+             `</section>`;
+    }).join("");
+  }
+
+  function buildBody() {
+    return buildMoodStats() +
+           `<div class="globe-section-divider"></div>` +
+           buildContinentSections();
+  }
+
   function open() {
     body.innerHTML = buildBody();
     modal.classList.add("open");
@@ -5908,6 +6044,10 @@ if (IS_DEV_MODE) {
   btn.addEventListener("click", () => {
     if (modal.classList.contains("open")) close();
     else open();
+  });
+  if (closeBtn) closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    close();
   });
   modal.addEventListener("click", (e) => {
     // Only the backdrop closes; clicks on the card itself stay open.
