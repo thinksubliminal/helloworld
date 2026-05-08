@@ -34,7 +34,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="drop a dot" />
-<meta name="theme-color" content="#0a1929" />
+<meta name="theme-color" content="#0c1828" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -53,7 +53,7 @@
     height: 100dvh;      /* tracks the visual viewport so iOS Safari's
                             dynamic toolbar can't expose a gap below the map */
     overflow: hidden;
-    background: #0a1929;
+    background: #0c1828;
     font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif;
     color: #1a1a1a;
     -webkit-font-smoothing: antialiased;
@@ -68,7 +68,7 @@
     position: fixed;
     top: 0; left: 0; right: 0;
     height: 50px;
-    background: rgba(5, 12, 22, 0.6);
+    background: #081119;
     -webkit-backdrop-filter: blur(12px);
             backdrop-filter: blur(12px);
     border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
@@ -81,7 +81,7 @@
   #topNav .nav-left { display: flex; align-items: center; }
   #topNav .nav-right { display: flex; align-items: center; gap: 20px; }
 
-  .leaflet-container { background: #0a1929 !important; font-family: inherit; outline: none; }
+  .leaflet-container { background: #0c1828 !important; font-family: inherit; outline: none; }
 
   /* Smoother, longer zoom animation with strong ease-out */
   .leaflet-zoom-anim .leaflet-zoom-animated {
@@ -115,7 +115,7 @@
   .leaflet-control-zoom {
     border: 0.5px solid rgba(255, 255, 255, 0.08) !important;
     box-shadow: none !important;
-    background: rgba(5, 12, 22, 0.6) !important;
+    background: #081119 !important;
     -webkit-backdrop-filter: blur(12px) !important;
             backdrop-filter: blur(12px) !important;
     border-radius: 8px !important;
@@ -1010,7 +1010,7 @@
      blur — they just have tinted backgrounds. */
   #bottomActions {
     /* Same glass as #topNav so the pill and the nav read as one material. */
-    background: rgba(5, 12, 22, 0.6);
+    background: #081119;
     -webkit-backdrop-filter: blur(12px);
             backdrop-filter: blur(12px);
     border: 0.5px solid rgba(255, 255, 255, 0.08);
@@ -1243,7 +1243,7 @@
        during the brief window between fade-in and the first
        renderMosaic() (which happens after `await loadTiles()`). The
        per-tile fills overwrite this once data lands. */
-    background: #0a1929;
+    background: #0c1828;
     border-radius: 4px;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12),
                 0 12px 40px rgba(0, 0, 0, 0.4);
@@ -1450,7 +1450,7 @@
        canvas with the user's mood color synchronously the moment draw
        mode opens, so this is rarely visible — but if it ever flashes,
        navy reads as part of the realm rather than a stray white card. */
-    background: #0a1929;
+    background: #0c1828;
     border-radius: 6px;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18),
                 0 12px 50px rgba(0, 0, 0, 0.5);
@@ -2436,7 +2436,7 @@
     left: 24px;
     z-index: 600;
     width: 230px;
-    background: rgba(5, 12, 22, 0.6);
+    background: #081119;
     -webkit-backdrop-filter: blur(12px);
             backdrop-filter: blur(12px);
     border: 0.5px solid rgba(255, 255, 255, 0.1);
@@ -2520,7 +2520,7 @@
     display: block;
     border-radius: 8px;
     border: 0.5px solid rgba(255, 255, 255, 0.1);
-    background: rgba(5, 12, 22, 0.6);
+    background: #081119;
     -webkit-backdrop-filter: blur(12px);
             backdrop-filter: blur(12px);
     padding: 10px 14px 9px;
@@ -5831,9 +5831,9 @@ function focusDot(msg) {
 
 const SILHOUETTE_STYLE = {
   fill: true,
-  fillColor: "#0b1b2c",
+  fillColor: "#081119",
   fillOpacity: 1,
-  color: "#26384A",
+  color: "#16283d",
   weight: 0.7,
   opacity: 1,
   lineCap: "round",
@@ -8786,7 +8786,7 @@ function buildCastSection(msg, wrap) {
   const REALM_EMPTY_FALLBACK = "#ffffff";
   // Empty unclaimed tiles in the mosaic — kept dark so the colored
   // filled tiles read as the foreground content.
-  const REALM_EMPTY_BG = "#0a1929";
+  const REALM_EMPTY_BG = "#0c1828";
   const REALM_POLL_MS = 30000;
   // Brush sizes as fractions of one tile's normalized width (0–1 space).
   const REALM_SIZES = { small: 0.03, medium: 0.06, large: 0.10 };
@@ -8930,6 +8930,8 @@ function buildCastSection(msg, wrap) {
     // Grid lines drawn LAST so they always paint over any stroke that
     // came right up to a tile edge (stroke clip includes the divider's
     // inner half, otherwise strokes would shave into the divider).
+    // Kept darker than the new bg/nav so the gaps between tiles read
+    // as actual gaps rather than another mid-tone surface.
     elMosaicCtx.strokeStyle = "#050c16";
     elMosaicCtx.lineWidth = 4;
     for (let i = 1; i < realmCols; i++) {
@@ -8958,7 +8960,7 @@ function buildCastSection(msg, wrap) {
       elMosaicCtx.save();
       elMosaicCtx.translate(cx - iconSize / 2, cy - iconSize / 2);
       elMosaicCtx.scale(scale, scale);
-      elMosaicCtx.strokeStyle = "#0a1929";
+      elMosaicCtx.strokeStyle = "#0c1828";
       elMosaicCtx.lineWidth = 2.5;
       elMosaicCtx.lineCap = "round";
       elMosaicCtx.lineJoin = "round";
