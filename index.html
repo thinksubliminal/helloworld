@@ -1223,7 +1223,11 @@
      formula picks the largest size that fits both 96vw and 88vh while
      preserving the cols:rows aspect ratio. */
   #realmMosaicCanvas {
-    background: #ffffff;
+    /* Default to the empty-tile navy so the canvas doesn't flash white
+       during the brief window between fade-in and the first
+       renderMosaic() (which happens after `await loadTiles()`). The
+       per-tile fills overwrite this once data lands. */
+    background: #0a1929;
     border-radius: 4px;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12),
                 0 12px 40px rgba(0, 0, 0, 0.4);
@@ -1426,7 +1430,11 @@
   #realmOverlay.draw-mode #realmMosaicWrap { display: none; }
 
   #realmDrawCanvas {
-    background: #ffffff;
+    /* Default to navy as a safer fallback than white. JS paints the
+       canvas with the user's mood color synchronously the moment draw
+       mode opens, so this is rarely visible — but if it ever flashes,
+       navy reads as part of the realm rather than a stray white card. */
+    background: #0a1929;
     border-radius: 6px;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18),
                 0 12px 50px rgba(0, 0, 0, 0.5);
