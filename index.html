@@ -5865,7 +5865,12 @@ function buildCountriesLayer() {
     style: () => SILHOUETTE_STYLE,
     interactive: false,
     pane: "countryPane",
-    smoothFactor: 1.2
+    smoothFactor: 1.2,
+    // Canvas renderer redraws faster than SVG for large polygons,
+    // and the 0.5 padding pre-renders an extra 50% of viewport on
+    // each side so a quick pan doesn't outrun the rendered area
+    // (the "background map briefly disappears" flicker).
+    renderer: L.canvas({ padding: 0.5, pane: "countryPane" })
   });
   countriesLayer.addTo(map);
 }
