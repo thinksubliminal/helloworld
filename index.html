@@ -628,6 +628,7 @@
     height: 20px;
     width: auto;
     display: block;
+    cursor: pointer;
   }
 
   /* Cycles an element through all 9 mood colors over 24 seconds, looping
@@ -711,7 +712,7 @@
      both pause and shift to amber/pink when the day-end warning/urgent
      classes are applied. */
   #helpBtn {
-    background: transparent;
+    background: #081119;
     border: 0.5px solid var(--ui-line);
     border-radius: 100px;
     padding: 4px 12px;
@@ -2021,12 +2022,12 @@
     width: 20px;
     height: 20px;
     position: relative;
-    color: #F5B842;
-    /* Subtle golden glow — two stacked drop-shadows for a tight inner
-       halo + softer outer bloom. Follows the chest silhouette so it
-       reads as light coming off the chest rather than a sticker. */
-    filter: drop-shadow(0 0 2px rgba(245, 184, 66, 0.5))
-            drop-shadow(0 0 7px rgba(245, 184, 66, 0.2));
+    color: #ff9e3d;
+    /* Subtle amber glow — two stacked drop-shadows for a tight inner
+       halo + softer outer bloom. Same flare amber as the chest fill
+       so the chest reads as part of the warm-accent vocabulary. */
+    filter: drop-shadow(0 0 2px rgba(255, 158, 61, 0.5))
+            drop-shadow(0 0 7px rgba(255, 158, 61, 0.2));
     transition: color 0.4s ease, filter 0.4s ease;
   }
   /* Claimed-for-this-hour state. The chest is still tappable (taps show
@@ -2703,7 +2704,7 @@
 <body>
 <nav id="topNav">
   <div class="nav-left">
-    <img id="title" src="assets/hello-world-logo.svg" alt="Hello, World!" />
+    <img id="title" src="assets/hello-world-logo.svg" alt="Hello, World!" role="button" tabindex="0" onclick="location.reload()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.reload();}" />
   </div>
   <div class="nav-right">
     <button id="helpBtn" type="button" aria-label="the rules">the rules</button>
