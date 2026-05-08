@@ -22,8 +22,21 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- cron.schedule() with an existing jobname updates the schedule in place
 -- on current pg_cron versions, so re-running this file is idempotent.
+--
+-- The drawing canvas is the one exception to the daily-delete promise:
+-- before TRUNCATE, today's `tiles` are copied into `tiles_archive` so
+-- the day's collective artwork is preserved (no user-identifying data
+-- lives on either table — strokes, mood, and date only). See tiles.sql
+-- for the archive schema and rationale.
 SELECT cron.schedule(
   'midnight-utc-reset',
   '0 0 * * *',
-  $$ TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims; $$
+  $$
+    INSERT INTO tiles_archive (day, tile_index, stroke_data, mood, original_created_at)
+    SELECT created_at::date, tile_index, stroke_data, mood, created_at
+    FROM tiles
+    ON CONFLICT (day, tile_index) DO NOTHING;
+
+    TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims, tiles;
+  $$
 );
