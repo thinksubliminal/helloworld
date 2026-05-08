@@ -6416,7 +6416,16 @@ function requestDrop() {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       dropBtn.disabled = false;
-      const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      // Round to 3 decimal places (~100m precision at the equator,
+      // ~70m at high latitudes) immediately, so the visitor's exact
+      // GPS coordinates exist only in this callback's local scope and
+      // are discarded when this function returns. Everything downstream
+      // (reverse geocode, map placement, Supabase insert) sees the
+      // rounded value only. This is what makes the privacy promise
+      // — "we never store your precise location" — literally true.
+      const lat = Math.round(pos.coords.latitude  * 1000) / 1000;
+      const lng = Math.round(pos.coords.longitude * 1000) / 1000;
+      const ll = L.latLng(lat, lng);
       const targetZoom = Math.max(map.getZoom(), 6);
       map.setView(ll, targetZoom, { animate: true });
       openCompose(ll);
@@ -6440,9 +6449,13 @@ function requestDrop() {
         });
       }
     },
-    // 20s timeout — desktop browsers (especially first-grant) can take a
-    // while to actually resolve the position after the user clicks Allow.
-    { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+    // High accuracy uses real GPS hardware so the city/country is
+    // correct even in regions where IP-based location is wildly off
+    // (border zones, mobile networks routed through faraway carriers,
+    // etc.). The privacy tradeoff is handled above — the precise value
+    // is rounded the moment we receive it. 20s timeout because high
+    // accuracy can take a few extra seconds on first grant.
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
   );
 }
 dropBtn.addEventListener("click", requestDrop);
@@ -7469,10 +7482,14 @@ function requestFlare() {
   flareBtn.disabled = true;
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      // GPS used for verification AND captured as planter_loc — proves the
-      // user is real, and stamps the flare with where it was shot from.
-      // The actual flare's lat/lng comes from the next map tap (the aim).
-      planterLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      // Round to 3 decimal places (~100m) at the source, same rule as
+      // requestDrop(). The flare row stores `planter_loc` (a city
+      // string from reverse-geocode), not the GPS coords themselves —
+      // but rounding before reverse-geocode keeps the precise value
+      // out of any network call.
+      const lat = Math.round(pos.coords.latitude  * 1000) / 1000;
+      const lng = Math.round(pos.coords.longitude * 1000) / 1000;
+      planterLatLng = L.latLng(lat, lng);
       flareBtn.disabled = false;
       enterFlarePlacementMode();
     },
@@ -7492,7 +7509,7 @@ function requestFlare() {
         });
       }
     },
-    { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
   );
 }
 flareBtn.addEventListener("click", requestFlare);
