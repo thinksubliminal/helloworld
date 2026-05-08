@@ -1402,11 +1402,13 @@
     max-width: 80vmin;
     max-height: 80vmin;
   }
-  .realm-view-hint {
+  .realm-view-hint,
+  .realm-draw-hint {
     font-size: 11px;
     color: rgba(255, 255, 255, 0.4);
     letter-spacing: 0.04em;
   }
+  .realm-draw-hint { margin-top: 18px; }
 
   /* Draw mode — full-screen single-tile canvas + bottom toolbar.
      Hidden until the user taps their assigned tile in the mosaic.
@@ -1436,21 +1438,38 @@
     cursor: crosshair;
   }
 
-  /* Drawing toolbar — pill of color swatches + brush sizes + done */
+  /* Drawing toolbar — same frosted glass recipe + corner radius as
+     the dot popups (`.leaflet-popup-content-wrapper`), so the toolbar
+     reads as part of the same material vocabulary. The lighter glass
+     also lets the black swatch stay visible (a black dot on a near-
+     opaque dark pill disappears). */
   .realm-toolbar {
     display: flex;
     align-items: center;
     gap: 14px;
     margin-top: 22px;
     padding: 10px 14px;
-    background: rgba(5, 12, 22, 0.8);
+    background: rgba(255, 255, 255, 0.07);
     border: 0.5px solid rgba(255, 255, 255, 0.1);
-    border-radius: 50px;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     flex-wrap: wrap;
     justify-content: center;
     max-width: 92vw;
+    row-gap: 10px;
+  }
+  /* On mobile, force the swatches onto their own row so the colors
+     line gets visual breathing room and the brush + done controls
+     drop to a second row underneath. The divider between swatches
+     and sizes becomes redundant and is hidden. */
+  @media (max-width: 600px) {
+    .realm-swatches {
+      flex-basis: 100%;
+      justify-content: center;
+    }
+    .realm-swatches + .realm-divider { display: none; }
   }
   .realm-swatches {
     display: flex;
@@ -1527,6 +1546,30 @@
   .realm-size[data-size="small"]  .realm-size-dot { width: 5px;  height: 5px;  }
   .realm-size[data-size="medium"] .realm-size-dot { width: 9px;  height: 9px;  }
   .realm-size[data-size="large"]  .realm-size-dot { width: 14px; height: 14px; }
+
+  /* Undo — small icon button matching the brush-size buttons' weight.
+     Disabled when there are no committed strokes to remove. */
+  .realm-undo {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s ease, opacity 0.15s ease, transform 0.12s ease;
+  }
+  .realm-undo:hover { background: rgba(255, 255, 255, 0.06); }
+  .realm-undo:active { transform: scale(0.94); }
+  .realm-undo:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .realm-undo:disabled:hover { background: transparent; }
+  .realm-undo svg { width: 16px; height: 16px; display: block; }
 
   #realmDone {
     border: none;
@@ -2771,8 +2814,15 @@
         <button class="realm-size" data-size="large"  type="button" aria-label="large brush"><span class="realm-size-dot"></span></button>
       </div>
       <div class="realm-divider"></div>
+      <button id="realmUndo" class="realm-undo" type="button" aria-label="undo last stroke" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 7v6h6"/>
+          <path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>
+        </svg>
+      </button>
       <button id="realmDone" type="button">done</button>
     </div>
+    <div class="realm-draw-hint">tap to close</div>
   </div>
 </div>
 
@@ -8631,7 +8681,7 @@ function buildCastSection(msg, wrap) {
   let userMoodColor = "#F5B842";
 
   let elBtn, elOverlay, elMosaic, elMosaicCtx, elDraw, elDrawCtx,
-      elStatus, elSwatches, elDone, elBack,
+      elStatus, elSwatches, elDone, elUndo, elBack,
       elView, elViewCanvas, elViewCtx, elViewMood;
 
   function tileBounds(i, sizeW, sizeH) {
@@ -8955,12 +9005,20 @@ function buildCastSection(msg, wrap) {
     if (isOpen) startPolling();
   }
 
+  // Undo + Done both track strokes.length: nothing to commit and
+  // nothing to roll back when the array is empty.
+  function syncDrawButtons() {
+    const has = strokes.length > 0;
+    if (elDone) elDone.disabled = !has;
+    if (elUndo) elUndo.disabled = !has;
+  }
+
   function enterDrawMode() {
     strokes = [];
     activeStroke = null;
     redrawDrawCanvas();
     elOverlay.classList.add("draw-mode");
-    elDone.disabled = true;          // becomes enabled after first stroke
+    syncDrawButtons();
     stopPolling();
   }
 
@@ -9015,7 +9073,14 @@ function buildCastSection(msg, wrap) {
     strokes.push(activeStroke);
     activeStroke = null;
     redrawDrawCanvas();
-    elDone.disabled = false;
+    syncDrawButtons();
+  }
+
+  function onUndoClick() {
+    if (strokes.length === 0) return;
+    strokes.pop();
+    redrawDrawCanvas();
+    syncDrawButtons();
   }
 
   async function saveTile() {
@@ -9099,6 +9164,7 @@ function buildCastSection(msg, wrap) {
     elStatus     = document.getElementById("realmStatus");
     elSwatches   = document.getElementById("realmSwatches");
     elDone       = document.getElementById("realmDone");
+    elUndo       = document.getElementById("realmUndo");
     elBack       = document.getElementById("realmBack");
     elView       = document.getElementById("realmView");
     elViewCanvas = document.getElementById("realmViewCanvas");
@@ -9173,6 +9239,23 @@ function buildCastSection(msg, wrap) {
     elDraw.addEventListener("pointerup",     onDrawPointerUp);
     elDraw.addEventListener("pointercancel", onDrawPointerUp);
     elDone.addEventListener("click", saveTile);
+    if (elUndo) elUndo.addEventListener("click", onUndoClick);
+
+    // Click-outside-to-close in draw mode: tapping the dark backdrop
+    // around the canvas (or the eyebrow / hint text) bails back to the
+    // mosaic without saving. Clicks that originate inside the canvas
+    // or the toolbar are ignored — those have their own behavior.
+    // Listener goes on the *wrapper* (#realmDraw), not the canvas
+    // (#realmDrawCanvas — what `elDraw` is bound to), since the dark
+    // area we care about is outside the canvas.
+    const drawWrap = document.getElementById("realmDraw");
+    if (drawWrap) {
+      drawWrap.addEventListener("click", (e) => {
+        if (!elOverlay.classList.contains("draw-mode")) return;
+        if (e.target.closest("#realmDrawCanvas, .realm-toolbar")) return;
+        exitDrawMode();
+      });
+    }
 
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && isOpen) {
