@@ -451,6 +451,187 @@ ALTER POLICY "anyone can answer an unanswered ping" ON casts RENAME TO "anyone c
   No `resetMyCast()` helper yet — clear `localStorage.hw-casted-today`
   manually if needed during dev.
 
+## Drawing Realm
+A fourth interaction type: a daily collaborative 10×10 mosaic the visitor
+enters via the pencil button in the bottom toolbar. Each visitor gets one
+tile per UTC day (capped at 100/day). The tile's background = the
+visitor's mood color from their dropped dot; their strokes paint on top.
+The mosaic resets at midnight UTC alongside all other daily tables.
+
+### Spec lock-ins (durable design decisions, not derivable from code)
+- **Async, not realtime.** No Supabase realtime subscriptions on `tiles`;
+  the mosaic refreshes via the same 30s polling pattern as dots/flares.
+  Chosen explicitly to stay on free tier — broadcasting every stroke
+  would dominate egress under any spike.
+- **Mosaic, not free canvas.** Fixed 100 tiles/day, one per visitor,
+  auto-assigned (the next empty `tile_index` 0–99). Visitor #101+ sees
+  the mosaic in read-only mode.
+- **Tiles always square; grid shape adapts to viewport.** `realmCols ×
+  realmRows = 100` always, but the split is `10×10` on landscape/square
+  viewports and `5×20` on tall portrait (height > 1.4× width). Tile #N
+  sits at a different visual position depending on layout, but the
+  artwork data is the same.
+- **Mood color carries through.** When a visitor enters draw mode, the
+  canvas is painted with their dot's mood color; the saved tile in the
+  mosaic shows that same color + their strokes. The cover gesture
+  (paint over to erase) just means clicking your own mood color in the
+  swatch row. No separate cover swatch.
+- **Drop a dot first.** The realm is gated behind `hasDroppedToday()` —
+  same gate as flares. Tapping the locked pencil button shows a
+  `flashHint` ("drop a dot before drawing"). `syncRealmBtn()` is
+  exposed on `window` and called after every `syncFlareBtn()` so the
+  lock state stays live without a refresh.
+- **Daily artifact / monetization is deferred.** No PNG snapshot, no
+  storage bucket, no commerce pipeline. Tiles get TRUNCATEd nightly
+  along with everything else. The daily-delete privacy promise still
+  holds because there is no permanent record.
+
+### Tables
+- `tiles` (id, tile_index, stroke_data, mood, created_at). One row per
+  drawn tile per day. `stroke_data` is a JSONB array of stroke objects:
+  `[{ color, size, points: [[x,y],...] }, ...]`. Coordinates are
+  normalized 0–1 within the tile so they scale across screen sizes.
+- `mood` is the artist's dropped-dot mood ID (e.g. "joyful", "sad")
+  used by the mosaic renderer to paint the tile's background.
+
+### RLS / constraints (current)
+- `tiles`:
+  - SELECT public.
+  - INSERT requires `tile_index` in `[0, 99]` and `stroke_data` to be a
+    JSON array.
+  - **`UNIQUE (tile_index)` constraint** at the table level enforces
+    "one tile per index per day" atomically. Two concurrent visitors
+    claiming the same empty index produce exactly one success; the
+    loser catches the `23505 unique_violation`, refetches, and retries
+    with the next empty index. Same first-respondent-wins pattern as
+    `flare_responses.flare_id`. The constraint naturally resets each
+    day because the table is truncated at midnight.
+
+### Daily reset
+- Included in the `midnight-utc-reset` pg_cron job alongside
+  `reports, casts, flare_responses, flares, messages, chest_claims`.
+  Source of truth for the cron is `cron.sql` (canonical) and the
+  schema bootstrap lives in `tiles.sql`.
+- **Archive is the exception to the daily-delete promise.** Before the
+  TRUNCATE, the cron does
+  `INSERT INTO tiles_archive ... SELECT ... FROM tiles ON CONFLICT DO NOTHING`
+  so each day's collective canvas is preserved permanently. This is
+  the foundation for any future "view past canvases" or print-sales
+  feature — vector data persists, no rendering pipeline exists yet.
+
+### Archive table (`tiles_archive`)
+- Schema: `(id, day, tile_index, stroke_data, mood, original_created_at, archived_at)`.
+  No `planter_id` / IP / device-ID columns by design — the privacy
+  promise rests on the archive carrying nothing identifying.
+- `UNIQUE (day, tile_index)` constraint + `ON CONFLICT DO NOTHING`
+  in the cron makes the archive insert idempotent (if the cron ever
+  fires twice in a window, no duplicates).
+- RLS: `SELECT` is public (a future client-side "view past day" feature
+  can query without auth). No INSERT/UPDATE/DELETE policy — only the
+  cron job (postgres superuser, bypasses RLS) writes.
+- Storage cost: ~5KB/tile × 100/day × 365 days ≈ 180MB/year.
+  Comfortable on free tier for several years.
+- Privacy/terms text reflects the exception: dots/messages/flares/casts
+  are wiped nightly, the canvas is preserved as a public artwork.
+
+### Polling
+- 30s interval on the mosaic view (matches the rest of the app's
+  egress posture). Polling pauses while in draw mode or lightbox/view
+  mode and resumes on return to the mosaic. The poll only triggers a
+  re-render if `tilesToday.length` changed — minor races (your
+  assigned index getting claimed) are handled by re-running
+  `pickAssigned()`.
+
+### Client identity / one-shot
+- `localStorage.hw-drew-today` stores today's UTC date string
+  (`YYYY-MM-DD`). The presence-check compares against today's date —
+  stale values from previous days are treated as not-drawn so visitors
+  aren't stuck in read-only mode after the midnight reset (the server
+  truncate doesn't clear localStorage; the date check does).
+- Same client-trust honor system as dots/flares/casts: bypassable via
+  incognito. Acceptable tradeoff.
+
+### Visual identity
+- Pencil button is the **5th button** in the bottom toolbar, rightmost.
+  Same 58px round shell as the others, stroked SVG (`viewBox 24 24`).
+  `.locked` class dims it when `!hasDroppedToday()`.
+- Realm overlay: full-screen frosted glass over the map (same recipe
+  as `#topNav` / `#hwToggle`: `rgba(5,12,22,0.6)` + `blur(12px)`).
+- Empty tiles in the mosaic = navy (`#0a1929`), filled tiles = artist's
+  mood color + their strokes. The visitor's own assigned tile renders
+  with their own mood color and a small pencil icon centered inside
+  (same SVG paths as the toolbar button).
+- Grid divider lines: solid `#050c16` (deeper navy than the empty
+  tiles), drawn LAST so they always paint over any stroke that comes
+  right up to the edge. Stroke painting is also clipped per-tile so
+  brush radius can't bleed into a neighbor.
+- Header: title "leave your mark" (44px, bold, near-white) → tight
+  pair with subtitle "100 strangers · 100 tiles · one canvas · wiped
+  at midnight UTC" → larger gap before the dynamic status line
+  ("tap your highlighted tile to begin · X/100 filled" or
+  "you've drawn today · fresh tile at midnight UTC").
+
+### Modes
+- **Mosaic** (default): the 10×10 (or 5×20) grid with the visitor's
+  tile highlighted in their mood color.
+- **Draw mode** (visitor tapped their assigned tile): single full-tile
+  canvas + toolbar (9 mood swatches + black + white, brush S/M/L,
+  done). Default selected color is **black** — high contrast against
+  every mood color. The visitor's own mood swatch gets a small dark
+  dot in its corner (`.is-canvas`) and a tooltip indicating it's also
+  the cover/erase color.
+- **Lightbox view** (visitor tapped any filled tile): one tile shown
+  enlarged with the artist's mood label above. Tap anywhere — canvas,
+  label, or the dark backdrop — to dismiss back to the mosaic.
+
+### Navigation
+- **← back to map** (top-left, plain text link, matches `.back-link`
+  style on the legal pages): always closes the realm entirely.
+  Tapping while in draw mode discards in-progress strokes.
+- **Esc** key: in lightbox → back to mosaic; in draw mode → back to
+  mosaic; in mosaic → close realm.
+- No × button on the lightbox — tap-anywhere-to-dismiss replaces it.
+
+### One-time migration SQL (current)
+```sql
+CREATE TABLE IF NOT EXISTS tiles (
+  id          uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
+  tile_index  smallint    NOT NULL CHECK (tile_index >= 0 AND tile_index < 100),
+  stroke_data jsonb       NOT NULL,
+  mood        text,
+  created_at  timestamptz DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS tiles_tile_index_unique ON tiles (tile_index);
+
+ALTER TABLE tiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anyone can read tiles" ON tiles;
+CREATE POLICY "anyone can read tiles" ON tiles FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "anyone can insert tiles" ON tiles;
+CREATE POLICY "anyone can insert tiles" ON tiles
+  FOR INSERT WITH CHECK (
+    tile_index >= 0 AND tile_index < 100
+    AND jsonb_typeof(stroke_data) = 'array'
+  );
+
+-- Update the midnight cron to include tiles. Idempotent (cron.schedule
+-- replaces in place when the jobname matches).
+SELECT cron.schedule(
+  'midnight-utc-reset',
+  '0 0 * * *',
+  $$ TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims, tiles; $$
+);
+```
+
+### Dev
+- Console (dev mode): `resetMyTile()` clears `localStorage.hw-drew-today`
+  so a fresh tile can be drawn from the same browser without waiting
+  for midnight or wiping the table server-side.
+- Server-side wipe (when testing layout from scratch):
+  `TRUNCATE TABLE tiles;` in the Supabase SQL editor.
+
 ## Heard Around the World panel
 - Bottom-left frosted-glass card showing a rotating selection of dots,
   sampled with a **random-weighted-recent** algorithm (newer dots more
@@ -599,7 +780,8 @@ SELECT cron.schedule(
 
 ## Midnight UTC reset
 - Authoritative reset is server-side via Supabase `pg_cron`. Job
-  `midnight-utc-reset` runs `TRUNCATE TABLE flare_responses, flares, messages`
+  `midnight-utc-reset` runs
+  `TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims, tiles`
   at `0 0 * * *` (00:00 UTC daily). pg_cron in Supabase runs in UTC.
 - Source of truth for the schedule lives at `cron.sql` in the repo root.
   If pg_cron is reinstalled or the project is migrated, run that file to
@@ -620,6 +802,9 @@ SELECT cron.schedule(
 - Console (dev mode only): `resetMyDot()` clears localStorage to allow
   another drop for testing
 - Console (dev mode only): `resetMyFlare()` clears today's flare lock
+- Console (dev mode only): `resetMyTile()` clears today's drawing-realm
+  lock (`hw-drew-today`) so a new tile can be drawn from the same
+  browser without waiting for midnight
 - Helpers are wired off `IS_DEV_MODE` near the top of the script in
   `index.html` — single source of truth, easy to extend if more dev-only
   tooling is needed later.

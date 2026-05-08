@@ -767,7 +767,7 @@
     border: 0.5px solid rgba(255, 255, 255, 0.12);
     border-radius: 12px;
     padding: 24px 26px 20px;
-    width: min(420px, 100%);
+    width: min(440px, 88vw);
     /* Cap the cards height to the viewport and let it scroll
        internally when the rules content gets long enough to overflow.
        Whole card scrolls including the eyebrow + title — simpler
@@ -1139,6 +1139,415 @@
     animation: castIconMarch 1.4s linear infinite;
   }
 
+  /* Drawing Realm — pencil button in the bottom toolbar. Same 58px
+     round shell as the other toolbar buttons; soft white tint at
+     rest, scales on hover, presses inward on active. The pencil SVG
+     uses currentColor so it inherits the button's white-ish tint. */
+  #realmBtn {
+    width: 58px; height: 58px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  #realmBtn:hover {
+    transform: scale(1.08);
+    background: rgba(255, 255, 255, 0.12);
+  }
+  #realmBtn:active { transform: scale(0.94); }
+  /* Pencil shape stretches corner-to-corner of its viewBox, so optically
+     it reads bigger than the other toolbar icons (star, dashed ring) at
+     the same 22px size. Bumped down a touch for visual parity. */
+  #realmBtn svg { width: 19px; height: 19px; display: block; }
+  /* Locked state — matches #flareBtn.locked. Realm is gated behind
+     dropping a dot today (mirrors the flare gate). */
+  #realmBtn.locked {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.5);
+  }
+  #realmBtn.locked:hover {
+    transform: none;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  /* Drawing Realm overlay — full-screen frosted glass over the map.
+     Same recipe as #hwToggle / #topNav / #bottomActions so the realm
+     reads as part of the same material system; the map peeks through
+     the blur so the realm feels layered on top of the world rather
+     than a separate page. The actual drawing/mosaic canvases stay
+     solid navy so artwork has a real surface to land on. */
+  #realmOverlay {
+    position: fixed; inset: 0;
+    background: rgba(5, 12, 22, 0.6);
+    -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+    z-index: 1200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.32s ease, visibility 0.32s ease;
+    overscroll-behavior: contain;
+  }
+  #realmOverlay.open { visibility: visible; opacity: 1; }
+  /* Lock body scroll while the realm is open so phone touch-drawing
+     doesn't accidentally pull the page. */
+  body.realm-active { overflow: hidden; }
+
+  /* Mosaic wrap — full viewport, with eyebrow anchored near the top
+     and status anchored near the bottom so the canvas can sit centered
+     in the middle without dead space bunching above and below. Same
+     layout works on every screen size — the canvas just grows. */
+  #realmMosaicWrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Mosaic canvas — adaptive grid shape. Tiles are always square, but
+     the cols/rows split changes by viewport: 10×10 on square/landscape,
+     5×20 on tall portrait. JS sets --cols and --rows inline; the min()
+     formula picks the largest size that fits both 96vw and 88vh while
+     preserving the cols:rows aspect ratio. */
+  #realmMosaicCanvas {
+    background: #ffffff;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12),
+                0 12px 40px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    touch-action: manipulation;
+    --cols: 10;
+    --rows: 10;
+    width:      min(96vw, calc(62vh * var(--cols) / var(--rows)));
+    height:     min(62vh, calc(96vw * var(--rows) / var(--cols)));
+    max-width:  96vw;
+    max-height: 62vh;
+  }
+  /* Title + subtitle stack as in-flow flex children of the wrap, so
+     they sit naturally above the canvas with the whole group centered
+     vertically. Status stays absolute-pinned to the bottom edge. */
+  /* Header rhythm — title gets generous breathing room above (clear
+     of the back-to-map button) and below (separating the headline
+     moment from the info pair). Subtitle + status are tightly paired
+     since they're both small meta-info; then a larger gap to the
+     canvas so the artwork sits in its own zone. */
+  .realm-eyebrow {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 44px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    text-transform: none;
+    color: rgba(255, 255, 255, 0.96);
+    text-align: center;
+    margin-top: 56px;
+    margin-bottom: 12px;
+  }
+  .realm-subtitle {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.92);
+    text-align: center;
+    line-height: 1.5;
+    max-width: 460px;
+    padding: 0 20px;
+    margin-bottom: 48px;
+  }
+  .realm-status {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.45);
+    text-align: center;
+    line-height: 1.5;
+    max-width: 460px;
+    padding: 0 20px;
+    margin-bottom: 14px;
+    min-height: 18px;
+  }
+
+  /* Back-to-map button — top-left text affordance, the realm's only
+     "leave entirely" exit. Visible in mosaic + draw modes; hidden in
+     lightbox/view mode (the × handles that). */
+  /* Matches the .back-link style on the legal pages — no background
+     pill, just color shift on hover. Keeps the leave-the-section
+     gesture visually consistent across the app. */
+  #realmBack {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    left: 14px;
+    z-index: 1300;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    font-weight: 400;
+    cursor: pointer;
+    padding: 8px 4px;
+    transition: color 0.15s ease;
+  }
+  #realmBack:hover { color: rgba(255, 255, 255, 0.95); }
+  #realmBack svg { width: 12px; height: 12px; display: block; }
+  #realmOverlay.view-mode #realmBack { display: none; }
+
+  /* Lightbox close (×) — only shown in view mode now; the realm-level
+     exit is handled by #realmBack. Fixed so it stays visible while the
+     overlay scrolls in portrait-grid mode. */
+  #realmExit {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    right: 14px;
+    z-index: 1300;
+    display: none;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, transform 0.15s ease;
+  }
+  #realmOverlay.view-mode #realmExit { display: flex; }
+  #realmExit:hover {
+    background: rgba(255, 255, 255, 0.16);
+    transform: scale(1.06);
+  }
+
+/* Portrait-grid mode — when the JS picks 5×20 instead of 10×10, the
+     overall canvas becomes much taller than the viewport. Switch the
+     overlay to a normal block-flow scroll container and let the canvas
+     fill the width. Eyebrow + status come back into the document flow
+     so they ride along the scroll instead of pinning to absolute edges. */
+  #realmOverlay.portrait-grid {
+    display: block;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  #realmOverlay.portrait-grid #realmMosaicWrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    height: auto;
+    min-height: 100%;
+    padding: calc(env(safe-area-inset-top, 0px) + 48px) 0
+             calc(env(safe-area-inset-bottom, 0px) + 28px);
+    gap: 16px;
+    box-sizing: border-box;
+  }
+  #realmOverlay.portrait-grid .realm-eyebrow,
+  #realmOverlay.portrait-grid .realm-status {
+    position: static;
+    left: auto; right: auto; top: auto; bottom: auto;
+  }
+  #realmOverlay.portrait-grid #realmMosaicCanvas {
+    width:      96vw;
+    height:     calc(96vw * var(--rows) / var(--cols));
+    max-width:  96vw;
+    max-height: none;
+  }
+
+  /* View mode — tap any filled tile in the mosaic to inspect it
+     enlarged. Read-only; tap the canvas (or × / Esc) to dismiss back
+     to the mosaic. Same overlay-driven visibility pattern as draw mode. */
+  #realmView {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: transparent;
+  }
+  #realmOverlay.view-mode #realmView { display: flex; }
+  #realmOverlay.view-mode #realmMosaicWrap { display: none; }
+  .realm-view-mood {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+    min-height: 14px;
+  }
+  #realmViewCanvas {
+    background: #ffffff;
+    border-radius: 6px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18),
+                0 12px 50px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    width: 80vmin;
+    height: 80vmin;
+    max-width: 80vmin;
+    max-height: 80vmin;
+  }
+  .realm-view-hint {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.04em;
+  }
+
+  /* Draw mode — full-screen single-tile canvas + bottom toolbar.
+     Hidden until the user taps their assigned tile in the mosaic.
+     Transparent so the overlay's frosted background shows through;
+     only the canvas itself is opaque. */
+  #realmDraw {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+  }
+  #realmOverlay.draw-mode #realmDraw { display: flex; }
+  #realmOverlay.draw-mode #realmMosaicWrap { display: none; }
+
+  #realmDrawCanvas {
+    background: #ffffff;
+    border-radius: 6px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18),
+                0 12px 50px rgba(0, 0, 0, 0.5);
+    touch-action: none;
+    max-width: 80vmin;
+    max-height: 80vmin;
+    width: 80vmin;
+    height: 80vmin;
+    cursor: crosshair;
+  }
+
+  /* Drawing toolbar — pill of color swatches + brush sizes + done */
+  .realm-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 22px;
+    padding: 10px 14px;
+    background: rgba(5, 12, 22, 0.8);
+    border: 0.5px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 92vw;
+  }
+  .realm-swatches {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .realm-swatch {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
+  .realm-swatch:hover { transform: scale(1.12); }
+  .realm-swatch.active {
+    border-color: rgba(255, 255, 255, 0.95);
+    transform: scale(1.12);
+  }
+  /* White swatch needs a visible border so it doesn't disappear into
+     the frosted dark toolbar. Black needs no special handling. */
+  .realm-swatch[data-color="#ffffff"] {
+    border: 1.5px solid rgba(255, 255, 255, 0.5);
+  }
+  .realm-swatch[data-color="#ffffff"].active {
+    border-color: rgba(255, 255, 255, 0.95);
+  }
+  /* "is-canvas" — set on the swatch matching the visitor's mood color
+     so they know it doubles as the cover/erase color. Small dark dot
+     in the corner; subtle enough not to fight the active state. */
+  .realm-swatch.is-canvas { position: relative; }
+  .realm-swatch.is-canvas::after {
+    content: '';
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    bottom: 1.5px;
+    right: 1.5px;
+    pointer-events: none;
+  }
+  .realm-divider {
+    width: 1px;
+    height: 22px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .realm-sizes {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .realm-size {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+  .realm-size:hover { background: rgba(255, 255, 255, 0.06); }
+  .realm-size.active {
+    border-color: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .realm-size-dot {
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.85);
+  }
+  .realm-size[data-size="small"]  .realm-size-dot { width: 5px;  height: 5px;  }
+  .realm-size[data-size="medium"] .realm-size-dot { width: 9px;  height: 9px;  }
+  .realm-size[data-size="large"]  .realm-size-dot { width: 14px; height: 14px; }
+
+  #realmDone {
+    border: none;
+    background: rgba(255, 255, 255, 0.92);
+    color: #0a121e;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.15s ease;
+  }
+  #realmDone:hover { transform: scale(1.04); }
+  #realmDone:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
   /* Globe modal — full-screen blurred overlay over the map. The card
      grows to a tall narrow column with internal scrolling so it can
      hold mood stats at the top plus a scrollable list of every
@@ -1166,7 +1575,7 @@
     border: 0.5px solid rgba(255, 255, 255, 0.12);
     border-radius: 12px;
     padding: 0;
-    width: min(560px, 92vw);
+    width: min(440px, 88vw);
     max-height: 88vh;
     display: flex;
     flex-direction: column;
@@ -1205,9 +1614,6 @@
     overflow-y: auto;
     padding: 24px 26px 22px;
     flex: 1 1 auto;
-    /* Reserve a bit of right gutter so the close button doesn't sit
-       directly over the eyebrow text on first paint. */
-    padding-right: 26px;
   }
   /* Hairline divider between the mood-stats block and the continent
      list below. Matches the same low-opacity stroke used on .mood-row
@@ -2227,6 +2633,12 @@
       </svg>
     </button>
     <button id="castBtn" type="button" aria-label="cast (open a cross-continental dot to enable)" hidden></button>
+    <button id="realmBtn" type="button" aria-label="enter the drawing realm">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M16.5 3.5 L20.5 7.5 L7.5 20.5 L3.5 20.5 L3.5 16.5 Z"/>
+        <path d="M14 6 L18 10"/>
+      </svg>
+    </button>
   </div>
 </div>
 
@@ -2274,7 +2686,6 @@
 
 <div id="moodModal" role="dialog" aria-modal="true" aria-labelledby="moodModalTitle">
   <div class="mood-card">
-    <button id="moodModalClose" class="mood-card-close" type="button" aria-label="close">&times;</button>
     <div class="mood-card-scroll">
       <div id="moodModalTitle" class="mood-eyebrow">the world feels...</div>
       <div id="moodModalBody"></div>
@@ -2285,7 +2696,7 @@
 <div id="helpModal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
   <div class="help-card">
     <div class="help-eyebrow">the rules</div>
-    <h2 id="helpModalTitle" class="help-title">Hello, World</h2>
+    <h2 id="helpModalTitle" class="help-title">hello, world</h2>
     <div class="help-section">
       <div class="help-section-header">
         <span class="help-icon-dot" aria-hidden="true"></span>
@@ -2325,6 +2736,42 @@
     <a class="help-coffee" href="https://ko-fi.com/thinksubliminal" target="_blank" rel="noopener">a coffee goes a long way ☕</a>
     <div class="help-legal">
       <a href="/terms/" target="_blank" rel="noopener">Terms</a><span class="help-legal-sep">·</span><a href="/privacy/" target="_blank" rel="noopener">Privacy</a><span class="help-legal-sep">·</span><a href="/contact/" target="_blank" rel="noopener">Contact</a><span class="help-legal-sep">·</span><a href="/credits/" target="_blank" rel="noopener">Credits</a>
+    </div>
+  </div>
+</div>
+
+<div id="realmOverlay" role="dialog" aria-modal="true" aria-label="drawing realm">
+  <button id="realmBack" type="button" aria-label="back to map">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M19 12H5"/>
+      <path d="M12 19l-7-7 7-7"/>
+    </svg>
+    <span>back to map</span>
+  </button>
+  <div id="realmMosaicWrap">
+    <div class="realm-eyebrow">leave your mark</div>
+    <div class="realm-subtitle">100 strangers · 100 tiles · one canvas · wiped at midnight UTC</div>
+    <div class="realm-status" id="realmStatus"></div>
+    <canvas id="realmMosaicCanvas" width="1000" height="1000"></canvas>
+  </div>
+  <div id="realmView">
+    <div class="realm-view-mood" id="realmViewMood"></div>
+    <canvas id="realmViewCanvas" width="1000" height="1000"></canvas>
+    <div class="realm-view-hint">tap to close</div>
+  </div>
+  <div id="realmDraw">
+    <div class="realm-eyebrow">your tile</div>
+    <canvas id="realmDrawCanvas" width="1000" height="1000"></canvas>
+    <div class="realm-toolbar">
+      <div class="realm-swatches" id="realmSwatches"></div>
+      <div class="realm-divider"></div>
+      <div class="realm-sizes">
+        <button class="realm-size" data-size="small"  type="button" aria-label="small brush"><span class="realm-size-dot"></span></button>
+        <button class="realm-size active" data-size="medium" type="button" aria-label="medium brush"><span class="realm-size-dot"></span></button>
+        <button class="realm-size" data-size="large"  type="button" aria-label="large brush"><span class="realm-size-dot"></span></button>
+      </div>
+      <div class="realm-divider"></div>
+      <button id="realmDone" type="button">done</button>
     </div>
   </div>
 </div>
@@ -5449,6 +5896,7 @@ async function submit() {
   syncDropPrompt();
   scheduleHeardPanelRender();
   syncFlareBtn();
+  if (window.syncRealmBtn) window.syncRealmBtn();
 }
 
 // ───────────── LANGUAGE / TRANSLATION ─────────────
@@ -5949,6 +6397,7 @@ if (IS_DEV_MODE) {
     syncDropPrompt();
     scheduleHeardPanelRender();
     syncFlareBtn();
+    if (window.syncRealmBtn) window.syncRealmBtn();
     console.log("%c[dev] resetMyDot: localStorage cleared, ready for a new drop", "color:#888");
     return "ok";
   };
@@ -5965,7 +6414,6 @@ if (IS_DEV_MODE) {
   const btn = document.getElementById("moodBtn");
   const modal = document.getElementById("moodModal");
   const body = document.getElementById("moodModalBody");
-  const closeBtn = document.getElementById("moodModalClose");
   if (!btn || !modal || !body) return;
 
   // Fixed continent order for the list. Always rendered in this order
@@ -6051,10 +6499,6 @@ if (IS_DEV_MODE) {
   btn.addEventListener("click", () => {
     if (modal.classList.contains("open")) close();
     else open();
-  });
-  if (closeBtn) closeBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    close();
   });
   modal.addEventListener("click", (e) => {
     // Only the backdrop closes; clicks on the card itself stay open.
@@ -7788,6 +8232,7 @@ function buildCastSection(msg, wrap) {
 
   renderHeardPanel();
   syncFlareBtn();
+  if (window.syncRealmBtn) window.syncRealmBtn();
 
   // Flares.
   let flareRows = bundle?.flares ?? null;
@@ -8130,6 +8575,638 @@ function buildCastSection(msg, wrap) {
   // re-rolls the random pick every HW_ROTATE_MS so the displayed messages
   // cycle even when no new dots are landing.
   startHeardRotation();
+})();
+
+// ═════════════════════════════════════════════════════════════════════════
+// Drawing Realm
+// ═════════════════════════════════════════════════════════════════════════
+// Async collaborative mosaic. Each visitor gets one tile in a fixed 10×10
+// grid; draws on it; saves; exits. No realtime — polling matches the rest
+// of the app's egress posture (see Supabase section in CLAUDE.md). The
+// `tiles` table is wiped at midnight UTC alongside everything else.
+//
+// Concurrency: Postgres' UNIQUE constraint on tile_index makes "next
+// empty tile" assignment race-free. Two clients claiming the same index
+// produce exactly one success; the loser catches the 23505 unique_violation,
+// refetches, and retries with the next empty slot.
+// ─────────────────────────────────────────────────────────────────────────
+(function realmInit() {
+  // Total tiles is always 100 — the artifact identity. The shape of
+  // the grid (cols × rows) adapts to viewport so vertical real estate
+  // doesn't go to waste on tall portrait phones. realmCols/realmRows
+  // are recomputed by pickGridShape() on open + window resize.
+  const REALM_TILE_COUNT = 100;
+  let realmCols = 10;
+  let realmRows = 10;
+  const REALM_DREW_KEY = "hw-drew-today";
+  // Empty-tile background in the mosaic. Filled tiles use the artist's
+  // mood color (read from the tile's `mood` column). Older rows that
+  // predate the mood column render against this same neutral white.
+  const REALM_EMPTY_FALLBACK = "#ffffff";
+  // Empty unclaimed tiles in the mosaic — kept dark so the colored
+  // filled tiles read as the foreground content.
+  const REALM_EMPTY_BG = "#0a1929";
+  const REALM_POLL_MS = 30000;
+  // Brush sizes as fractions of one tile's normalized width (0–1 space).
+  const REALM_SIZES = { small: 0.03, medium: 0.06, large: 0.10 };
+  // Drawing palette: 9 mood colors. The "cover" swatch is rendered
+  // separately and paints with userMoodColor (the visitor's current
+  // mood) so painting over visually erases against the canvas.
+  const REALM_COLORS = MOODS.map(m => m.color);
+
+  let tilesToday = [];
+  let assignedIndex = -1;
+  let readOnly = false;
+  let strokes = [];        // committed strokes for the active tile
+  let activeStroke = null; // in-progress stroke during pointer-down
+  let curColor = REALM_COLORS[0];
+  let curSize = "medium";
+  let pollTimer = null;
+  let isOpen = false;
+  // Set when the realm opens, derived from the user's dropped-dot mood.
+  // Drives the draw canvas background, the cover swatch's color, and
+  // the saved tile's `mood` field. Defaults to joyful as a safety net
+  // if mood data is somehow missing (the gate normally prevents this).
+  let userMoodId    = "joyful";
+  let userMoodColor = "#F5B842";
+
+  let elBtn, elOverlay, elMosaic, elMosaicCtx, elDraw, elDrawCtx,
+      elStatus, elSwatches, elDone, elBack,
+      elView, elViewCanvas, elViewCtx, elViewMood;
+
+  function tileBounds(i, sizeW, sizeH) {
+    const col = i % realmCols;
+    const row = Math.floor(i / realmCols);
+    const w = sizeW / realmCols;
+    const h = sizeH / realmRows;
+    return { x: col * w, y: row * h, w, h };
+  }
+
+  // Returns the bg color a filled tile should wear in the mosaic — the
+  // artist's mood color at the time of drawing, with a neutral white
+  // fallback for legacy rows inserted before the `mood` column existed.
+  function tileBgColor(tile) {
+    if (tile && tile.mood && MOOD_BY_ID[tile.mood]) {
+      return MOOD_BY_ID[tile.mood].color;
+    }
+    return REALM_EMPTY_FALLBACK;
+  }
+
+  // Pick the grid shape based on viewport aspect. Tall portrait gets
+  // a 5×20 mosaic so the canvas can fill the screen height instead of
+  // sitting square in the middle of dead vertical space.
+  function pickGridShape() {
+    if (window.innerHeight > window.innerWidth * 1.4) {
+      realmCols = 5; realmRows = 20;
+    } else {
+      realmCols = 10; realmRows = 10;
+    }
+  }
+
+  // Apply the current grid shape to the mosaic canvas: backing buffer
+  // dimensions (so each tile is 100px square in canvas space), plus
+  // CSS custom properties --cols/--rows that drive the responsive
+  // sizing in the stylesheet.
+  function applyGridLayout() {
+    if (!elMosaic) return;
+    const TILE_PX = 100;
+    elMosaic.width  = realmCols * TILE_PX;
+    elMosaic.height = realmRows * TILE_PX;
+    elMosaic.style.setProperty("--cols", String(realmCols));
+    elMosaic.style.setProperty("--rows", String(realmRows));
+    // Portrait grid (rows > cols) gets a wider, taller-than-screen canvas
+    // and the overlay becomes vertically scrollable. Class drives the CSS.
+    elOverlay.classList.toggle("portrait-grid", realmRows > realmCols);
+  }
+
+  // Render an array of strokes (in 0–1 tile-local space) into ctx, mapped
+  // to (x, y, w, h) display coordinates. Used by both the mosaic and the
+  // active draw canvas — same shape data, different scale.
+  function paintStrokes(ctx, tileStrokes, x, y, w, h) {
+    if (!Array.isArray(tileStrokes)) return;
+    for (const s of tileStrokes) {
+      if (!s || !Array.isArray(s.points) || s.points.length === 0) continue;
+      ctx.beginPath();
+      ctx.strokeStyle = s.color || "#ffffff";
+      ctx.fillStyle   = s.color || "#ffffff";
+      ctx.lineWidth   = (s.size || 0.06) * w;
+      ctx.lineCap     = "round";
+      ctx.lineJoin    = "round";
+      const [px0, py0] = s.points[0];
+      // Single point: render as a filled dot (line stroke wouldn't show).
+      if (s.points.length === 1) {
+        ctx.arc(x + px0 * w, y + py0 * h, ((s.size || 0.06) * w) / 2, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+      ctx.moveTo(x + px0 * w, y + py0 * h);
+      for (let i = 1; i < s.points.length; i++) {
+        const [px, py] = s.points[i];
+        ctx.lineTo(x + px * w, y + py * h);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function renderMosaic() {
+    if (!elMosaicCtx) return;
+    const W = elMosaic.width;
+    const H = elMosaic.height;
+
+    const filledByIndex = {};
+    for (const t of tilesToday) filledByIndex[t.tile_index] = t;
+
+    // Per-tile backgrounds:
+    //   - filled tiles wear their artist's mood color
+    //   - the visitor's assigned (still-empty) tile wears the visitor's
+    //     own mood color, previewing what their tile will look like
+    //   - all other empty tiles stay navy
+    for (let i = 0; i < REALM_TILE_COUNT; i++) {
+      const b = tileBounds(i, W, H);
+      let bg;
+      if (filledByIndex[i])                    bg = tileBgColor(filledByIndex[i]);
+      else if (i === assignedIndex && !readOnly) bg = userMoodColor;
+      else                                     bg = REALM_EMPTY_BG;
+      elMosaicCtx.fillStyle = bg;
+      elMosaicCtx.fillRect(b.x, b.y, b.w, b.h);
+    }
+
+    // Strokes for filled tiles, painted on top of the colored tile bg.
+    // Each tile's strokes are clipped to its own bounds so a thick
+    // brush near the edge can't bleed into the next tile.
+    for (let i = 0; i < REALM_TILE_COUNT; i++) {
+      const t = filledByIndex[i];
+      if (!t) continue;
+      const b = tileBounds(i, W, H);
+      elMosaicCtx.save();
+      elMosaicCtx.beginPath();
+      elMosaicCtx.rect(b.x, b.y, b.w, b.h);
+      elMosaicCtx.clip();
+      paintStrokes(elMosaicCtx, t.stroke_data, b.x, b.y, b.w, b.h);
+      elMosaicCtx.restore();
+    }
+
+    // Grid lines drawn LAST so they always paint over any stroke that
+    // came right up to a tile edge (stroke clip includes the divider's
+    // inner half, otherwise strokes would shave into the divider).
+    elMosaicCtx.strokeStyle = "#050c16";
+    elMosaicCtx.lineWidth = 4;
+    for (let i = 1; i < realmCols; i++) {
+      const p = (W / realmCols) * i;
+      elMosaicCtx.beginPath();
+      elMosaicCtx.moveTo(p, 0); elMosaicCtx.lineTo(p, H);
+      elMosaicCtx.stroke();
+    }
+    for (let i = 1; i < realmRows; i++) {
+      const p = (H / realmRows) * i;
+      elMosaicCtx.beginPath();
+      elMosaicCtx.moveTo(0, p); elMosaicCtx.lineTo(W, p);
+      elMosaicCtx.stroke();
+    }
+
+    // Pencil icon centered in the assigned tile — same shape as the
+    // toolbar button, so the visitor sees the gesture they tapped
+    // echoed back in the canvas. Disappears once the tile is filled.
+    // Paths trace the SVG used in #realmBtn (viewBox 24×24).
+    if (!readOnly && assignedIndex >= 0 && !filledByIndex[assignedIndex]) {
+      const b = tileBounds(assignedIndex, W, H);
+      const iconSize = b.w * 0.22;
+      const cx = b.x + b.w / 2;
+      const cy = b.y + b.h / 2;
+      const scale = iconSize / 24;
+      elMosaicCtx.save();
+      elMosaicCtx.translate(cx - iconSize / 2, cy - iconSize / 2);
+      elMosaicCtx.scale(scale, scale);
+      elMosaicCtx.strokeStyle = "#0a1929";
+      elMosaicCtx.lineWidth = 2.5;
+      elMosaicCtx.lineCap = "round";
+      elMosaicCtx.lineJoin = "round";
+      // Pencil body
+      elMosaicCtx.beginPath();
+      elMosaicCtx.moveTo(16.5, 3.5);
+      elMosaicCtx.lineTo(20.5, 7.5);
+      elMosaicCtx.lineTo(7.5, 20.5);
+      elMosaicCtx.lineTo(3.5, 20.5);
+      elMosaicCtx.lineTo(3.5, 16.5);
+      elMosaicCtx.closePath();
+      elMosaicCtx.stroke();
+      // Eraser band
+      elMosaicCtx.beginPath();
+      elMosaicCtx.moveTo(14, 6);
+      elMosaicCtx.lineTo(18, 10);
+      elMosaicCtx.stroke();
+      elMosaicCtx.restore();
+    }
+  }
+
+  function updateStatus() {
+    if (!elStatus) return;
+    if (readOnly && tilesToday.length >= REALM_TILE_COUNT) {
+      elStatus.textContent = "today's canvas is complete · fresh grid at midnight UTC";
+    } else if (readOnly) {
+      elStatus.textContent = "you've drawn today · fresh tile at midnight UTC";
+    } else if (assignedIndex >= 0) {
+      elStatus.textContent =
+        "tap your highlighted tile to begin · " +
+        tilesToday.length + "/" + REALM_TILE_COUNT + " filled";
+    } else {
+      elStatus.textContent = "";
+    }
+  }
+
+  async function loadTiles() {
+    try {
+      const { data, error } = await sb
+        .from("tiles")
+        .select("tile_index, stroke_data, mood, created_at")
+        .gte("created_at", todayMidnightUTC());
+      if (error) {
+        console.warn("[realm] tiles fetch failed:", error.message);
+        return;
+      }
+      tilesToday = data || [];
+    } catch (e) {
+      console.warn("[realm] tiles fetch threw:", e);
+    }
+  }
+
+  // YYYY-MM-DD UTC — same shape used elsewhere in localStorage so that
+  // a stale value from a prior UTC day is treated as not-drawn after
+  // the midnight reset (the localStorage entry itself doesn't get
+  // wiped by the server-side TRUNCATE).
+  function realmTodayKey() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function pickAssigned() {
+    let drewToday = false;
+    try { drewToday = localStorage.getItem(REALM_DREW_KEY) === realmTodayKey(); }
+    catch (e) {}
+    const filled = new Set(tilesToday.map(t => t.tile_index));
+    if (drewToday || filled.size >= REALM_TILE_COUNT) {
+      readOnly = true; assignedIndex = -1; return;
+    }
+    for (let i = 0; i < REALM_TILE_COUNT; i++) {
+      if (!filled.has(i)) { assignedIndex = i; readOnly = false; return; }
+    }
+    readOnly = true; assignedIndex = -1;
+  }
+
+  // Pull the user's currently-dropped mood. Returns null if they
+  // haven't dropped today (the gate normally prevents reaching here).
+  function readUserMood() {
+    try {
+      if (typeof loadUserMessages !== "function") return null;
+      const mine = loadUserMessages().find(m => m.mine);
+      if (!mine || !mine.mood) return null;
+      const mood = MOOD_BY_ID[mine.mood];
+      if (!mood) return null;
+      return mood;
+    } catch (e) { return null; }
+  }
+
+  async function openRealm() {
+    if (isOpen) return;
+    // Gate: must have dropped a dot today.
+    if (typeof hasDroppedToday === "function" && !hasDroppedToday()) {
+      flashHint("drop a dot before drawing");
+      return;
+    }
+    const mood = readUserMood();
+    if (mood) {
+      userMoodId = mood.id;
+      userMoodColor = mood.color;
+    }
+    // Mark the swatch matching the visitor's mood color as their
+    // canvas/cover color (small dot indicator + hover tooltip).
+    if (elSwatches) {
+      elSwatches.querySelectorAll(".realm-swatch").forEach(el => {
+        const isCanvas = (el.dataset.color || "").toLowerCase() === userMoodColor.toLowerCase();
+        el.classList.toggle("is-canvas", isCanvas);
+        if (isCanvas) el.title = "your canvas color · paint over to erase";
+        else el.removeAttribute("title");
+      });
+    }
+    isOpen = true;
+    elOverlay.classList.add("open");
+    document.body.classList.add("realm-active");
+    pickGridShape();
+    applyGridLayout();
+    await loadTiles();
+    pickAssigned();
+    renderMosaic();
+    updateStatus();
+    startPolling();
+  }
+
+  function closeRealm() {
+    if (!isOpen) return;
+    isOpen = false;
+    exitDrawMode();
+    elOverlay.classList.remove("open", "portrait-grid", "view-mode");
+    document.body.classList.remove("realm-active");
+    stopPolling();
+  }
+
+  function onMosaicClick(ev) {
+    const rect = elMosaic.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) / rect.width;
+    const py = (ev.clientY - rect.top) / rect.height;
+    if (px < 0 || px > 1 || py < 0 || py > 1) return;
+    const col = Math.floor(px * realmCols);
+    const row = Math.floor(py * realmRows);
+    const idx = row * realmCols + col;
+    const tile = tilesToday.find(t => t.tile_index === idx);
+    if (tile) {
+      // Filled tile — open the lightbox view
+      enterViewMode(tile);
+    } else if (!readOnly && idx === assignedIndex) {
+      // Empty + your assigned tile — enter draw mode
+      enterDrawMode();
+    }
+    // Else (empty + not yours) — do nothing.
+  }
+
+  // Lightbox view: render one filled tile enlarged so you can study
+  // it. Read-only, no toolbar, dismiss with tap / × / Esc. Polling
+  // pauses while open so the view doesn't repaint mid-gaze.
+  function enterViewMode(tile) {
+    if (!tile || !elViewCtx) return;
+    const size = elViewCanvas.width;
+    elViewCtx.fillStyle = tileBgColor(tile);
+    elViewCtx.fillRect(0, 0, size, size);
+    elViewCtx.save();
+    elViewCtx.beginPath();
+    elViewCtx.rect(0, 0, size, size);
+    elViewCtx.clip();
+    paintStrokes(elViewCtx, tile.stroke_data, 0, 0, size, size);
+    elViewCtx.restore();
+    if (elViewMood) {
+      elViewMood.textContent = (tile.mood && MOOD_BY_ID[tile.mood])
+        ? MOOD_BY_ID[tile.mood].name
+        : "";
+    }
+    elOverlay.classList.add("view-mode");
+    stopPolling();
+  }
+
+  function exitViewMode() {
+    elOverlay.classList.remove("view-mode");
+    if (isOpen) startPolling();
+  }
+
+  function enterDrawMode() {
+    strokes = [];
+    activeStroke = null;
+    redrawDrawCanvas();
+    elOverlay.classList.add("draw-mode");
+    elDone.disabled = true;          // becomes enabled after first stroke
+    stopPolling();
+  }
+
+  function exitDrawMode() {
+    elOverlay.classList.remove("draw-mode");
+    activeStroke = null;
+    if (isOpen) startPolling();
+  }
+
+  function redrawDrawCanvas() {
+    const size = elDraw.width;
+    // Draw canvas wears the user's mood color so what they make sits
+    // on the same surface that their tile will display in the mosaic.
+    elDrawCtx.fillStyle = userMoodColor;
+    elDrawCtx.fillRect(0, 0, size, size);
+    paintStrokes(elDrawCtx, strokes, 0, 0, size, size);
+    if (activeStroke) paintStrokes(elDrawCtx, [activeStroke], 0, 0, size, size);
+  }
+
+  function pointerToTileXY(ev) {
+    const rect = elDraw.getBoundingClientRect();
+    let x = (ev.clientX - rect.left) / rect.width;
+    let y = (ev.clientY - rect.top) / rect.height;
+    // clamp to tile bounds so a stroke that drifts off-canvas still
+    // produces well-formed normalized coordinates
+    if (x < 0) x = 0; else if (x > 1) x = 1;
+    if (y < 0) y = 0; else if (y > 1) y = 1;
+    return [x, y];
+  }
+
+  function onDrawPointerDown(ev) {
+    ev.preventDefault();
+    try { elDraw.setPointerCapture(ev.pointerId); } catch (e) {}
+    activeStroke = {
+      color: curColor,
+      size: REALM_SIZES[curSize],
+      points: [pointerToTileXY(ev)],
+    };
+    redrawDrawCanvas();
+  }
+
+  function onDrawPointerMove(ev) {
+    if (!activeStroke) return;
+    ev.preventDefault();
+    activeStroke.points.push(pointerToTileXY(ev));
+    redrawDrawCanvas();
+  }
+
+  function onDrawPointerUp(ev) {
+    if (!activeStroke) return;
+    try { elDraw.releasePointerCapture(ev.pointerId); } catch (e) {}
+    strokes.push(activeStroke);
+    activeStroke = null;
+    redrawDrawCanvas();
+    elDone.disabled = false;
+  }
+
+  async function saveTile() {
+    if (assignedIndex < 0) return;
+    elDone.disabled = true;
+    let attempts = 0;
+    while (attempts < 5) {
+      attempts++;
+      try {
+        const { error } = await sb.from("tiles").insert([{
+          tile_index: assignedIndex,
+          stroke_data: strokes,
+          mood: userMoodId,
+        }]);
+        if (!error) {
+          try { localStorage.setItem(REALM_DREW_KEY, realmTodayKey()); } catch (e) {}
+          await loadTiles();
+          readOnly = true;
+          assignedIndex = -1;
+          exitDrawMode();
+          renderMosaic();
+          updateStatus();
+          flashHint("your tile is in");
+          return;
+        }
+        // 23505 unique_violation → someone claimed our index first
+        if (error.code === "23505") {
+          await loadTiles();
+          pickAssigned();
+          if (readOnly) {
+            exitDrawMode();
+            renderMosaic();
+            updateStatus();
+            flashHint("today's canvas filled while you were drawing");
+            return;
+          }
+          continue; // retry with the new assignedIndex
+        }
+        console.warn("[realm] save failed:", error.message);
+        flashHint("save failed. try again.");
+        elDone.disabled = false;
+        return;
+      } catch (e) {
+        console.warn("[realm] save threw:", e);
+        flashHint("save failed. try again.");
+        elDone.disabled = false;
+        return;
+      }
+    }
+    flashHint("couldn't claim a tile. try again.");
+    elDone.disabled = false;
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(async () => {
+      if (!isOpen || elOverlay.classList.contains("draw-mode")) return;
+      const before = tilesToday.length;
+      await loadTiles();
+      if (assignedIndex < 0 && !readOnly) pickAssigned();
+      if (!readOnly && assignedIndex >= 0) {
+        const stillFree = !tilesToday.some(t => t.tile_index === assignedIndex);
+        if (!stillFree) pickAssigned();
+      }
+      if (tilesToday.length !== before) {
+        renderMosaic();
+        updateStatus();
+      }
+    }, REALM_POLL_MS);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function init() {
+    elBtn        = document.getElementById("realmBtn");
+    elOverlay    = document.getElementById("realmOverlay");
+    elMosaic     = document.getElementById("realmMosaicCanvas");
+    elDraw       = document.getElementById("realmDrawCanvas");
+    elStatus     = document.getElementById("realmStatus");
+    elSwatches   = document.getElementById("realmSwatches");
+    elDone       = document.getElementById("realmDone");
+    elBack       = document.getElementById("realmBack");
+    elView       = document.getElementById("realmView");
+    elViewCanvas = document.getElementById("realmViewCanvas");
+    elViewMood   = document.getElementById("realmViewMood");
+    if (!elBtn || !elOverlay || !elMosaic || !elDraw) return;
+
+    elMosaicCtx = elMosaic.getContext("2d");
+    elDrawCtx   = elDraw.getContext("2d");
+    if (elViewCanvas) elViewCtx = elViewCanvas.getContext("2d");
+
+    // Swatch row: 9 mood colors + black + white. The visitor's own
+    // mood color is already in the row, so "paint over with canvas
+    // color" (the original cover gesture) just means clicking that
+    // mood swatch — no separate cover button needed. Black is the
+    // default active so the first stroke is always visible regardless
+    // of what mood the visitor's canvas is.
+    const SWATCH_COLORS = REALM_COLORS.concat(["#000000", "#ffffff"]);
+    const DEFAULT_ACTIVE = "#000000";
+    curColor = DEFAULT_ACTIVE;
+    for (const c of SWATCH_COLORS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "realm-swatch";
+      b.style.background = c;
+      b.dataset.color = c;
+      b.setAttribute("aria-label", "color " + c);
+      if (c === DEFAULT_ACTIVE) b.classList.add("active");
+      b.addEventListener("click", () => {
+        curColor = c;
+        elSwatches.querySelectorAll(".realm-swatch").forEach(el => el.classList.remove("active"));
+        b.classList.add("active");
+      });
+      elSwatches.appendChild(b);
+    }
+
+    // brush size buttons
+    document.querySelectorAll(".realm-size").forEach(btn => {
+      btn.addEventListener("click", () => {
+        curSize = btn.dataset.size;
+        document.querySelectorAll(".realm-size").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    });
+
+    // Reflect the dot-dropped gate visually. Locked when the visitor
+    // hasn't dropped today; unlocked the moment they do (we expose this
+    // on window so the existing dot-drop / state-change paths can call
+    // it the same way they call syncFlareBtn).
+    function syncRealmBtn() {
+      if (!elBtn) return;
+      const dropped = typeof hasDroppedToday === "function" && hasDroppedToday();
+      elBtn.classList.toggle("locked", !dropped);
+      elBtn.setAttribute("aria-label", dropped
+        ? "enter the drawing realm"
+        : "drop a dot first to unlock the drawing realm");
+    }
+    window.syncRealmBtn = syncRealmBtn;
+    syncRealmBtn();
+
+    elBtn.addEventListener("click", openRealm);
+    // ← back to map always closes the entire realm, no matter the
+    // mode. Tapping while in draw mode discards any in-progress strokes.
+    if (elBack) elBack.addEventListener("click", closeRealm);
+    // Lightbox view: tap anywhere — canvas, label, dark backdrop —
+    // to dismiss back to the mosaic. Same pattern as other modals on
+    // the site that close on outside tap.
+    if (elView) elView.addEventListener("click", exitViewMode);
+    elMosaic.addEventListener("click", onMosaicClick);
+
+    elDraw.addEventListener("pointerdown",   onDrawPointerDown);
+    elDraw.addEventListener("pointermove",   onDrawPointerMove);
+    elDraw.addEventListener("pointerup",     onDrawPointerUp);
+    elDraw.addEventListener("pointercancel", onDrawPointerUp);
+    elDone.addEventListener("click", saveTile);
+
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && isOpen) {
+        if (elOverlay.classList.contains("draw-mode")) exitDrawMode();
+        else if (elOverlay.classList.contains("view-mode")) exitViewMode();
+        else closeRealm();
+      }
+    });
+
+    // Re-pick grid shape on resize/orientation change. Only re-render if
+    // the shape actually changed — minor resizes shouldn't reflow.
+    window.addEventListener("resize", () => {
+      if (!isOpen) return;
+      const oldCols = realmCols, oldRows = realmRows;
+      pickGridShape();
+      if (oldCols !== realmCols || oldRows !== realmRows) {
+        applyGridLayout();
+        renderMosaic();
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  if (typeof IS_DEV_MODE !== "undefined" && IS_DEV_MODE) {
+    window.resetMyTile = function () {
+      try { localStorage.removeItem(REALM_DREW_KEY); } catch (e) {}
+      console.log("%c[dev] resetMyTile: localStorage cleared, ready to draw a fresh tile", "color:#5BBED4");
+    };
+  }
 })();
 
 // ───────────── PWA: service worker registration ─────────────
