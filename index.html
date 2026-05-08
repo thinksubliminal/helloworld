@@ -9385,8 +9385,14 @@ function buildCastSection(msg, wrap) {
     if (elBack) elBack.addEventListener("click", closeRealm);
     // Lightbox view: tap anywhere — canvas, label, dark backdrop —
     // to dismiss back to the mosaic. Same pattern as other modals on
-    // the site that close on outside tap.
-    if (elView) elView.addEventListener("click", exitViewMode);
+    // the site that close on outside tap. stopPropagation prevents
+    // the overlay-level mosaic handler from also firing once
+    // exitViewMode has removed the view-mode class (otherwise it
+    // would see "no special mode" and close the realm to the map).
+    if (elView) elView.addEventListener("click", (e) => {
+      e.stopPropagation();
+      exitViewMode();
+    });
     elMosaic.addEventListener("click", onMosaicClick);
 
     elDraw.addEventListener("pointerdown",   onDrawPointerDown);
@@ -9408,6 +9414,11 @@ function buildCastSection(msg, wrap) {
       drawWrap.addEventListener("click", (e) => {
         if (!elOverlay.classList.contains("draw-mode")) return;
         if (e.target.closest("#realmDrawCanvas, .realm-toolbar")) return;
+        // Stop the bubble so the overlay-level mosaic handler below
+        // doesn't run after exitDrawMode() has already removed the
+        // draw-mode class — without this it would think the click
+        // happened in mosaic mode and close the realm entirely.
+        e.stopPropagation();
         exitDrawMode();
       });
     }
