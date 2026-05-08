@@ -340,18 +340,22 @@ one cast per receiver per day, cross-continental only.
 
 ### UI flow
 - Cast button is the **4th button** in the bottom toolbar, between
-  the flare and the globe. Dormant by default (dim, not-allowed
-  cursor); gets the `.active` class — gold tint, full opacity,
-  pointer cursor — only when:
-  1. A dot popup is currently open (`currentOpenDotId` set)
-  2. It's not the viewer's own dot
-  3. The viewer has dropped a dot today
-  4. The viewer has not cast today (`hw-casted-today`)
-  5. The target dot has not been cast to yet
-  6. The two dots are on different continents
-- Tapping the dormant button when conditions fail surfaces a
-  context-appropriate `flashHint(...)` toast in the same
-  toolbar-status style as flares' "you've shot a flare today":
+  the flare and the realm pencil. Mirrors flare's three-state
+  pattern (`locked` / resting / `.active`) and uses the **flare amber
+  `#ff9e3d`** across all surfaces (toolbar button, in-popup cast
+  trigger icon, rules-modal cast icon, polylines on the map):
+  - **`.locked`** — dim gray, not-allowed cursor. Set when the
+    visitor has not dropped a dot today, or has already cast today.
+  - **Resting** — amber tint, pointer cursor, no glow. Set when the
+    visitor can-cast-today but no valid target popup is open.
+  - **`.active`** — amber border + amber `box-shadow` glow + lighter
+    amber icon. Set when a cross-continental, not-yet-cast-to dot
+    popup is open.
+- `updateCastBtnState()` runs after dot-drop, resetMyDot, boot, and
+  every popup open/close, so the lock state flips live when the
+  visitor's eligibility changes (no refresh required).
+- Tapping the locked or resting button (when conditions fail)
+  surfaces a context-appropriate `flashHint(...)` toast:
   - No dot dropped → "drop a dot before casting your line"
   - Already cast today → "your line is already in the water"
   - No popup open → "open a dot across the ocean to cast"
@@ -360,6 +364,10 @@ one cast per receiver per day, cross-continental only.
   inline. Q&A reuses the flare-popup classes (`.flare-popup-q`,
   `.flare-popup-respond-area`, etc.) so the visual treatment
   matches flare answers exactly.
+- `castFormOpenForId` is **always** cleared on every popupopen
+  (no "preserve when same dot" guard) — that guard previously left
+  a window on mobile where the flag could leak across popups and
+  auto-render the question form in a fresh dot's popup.
 
 ### Q&A visibility (public)
 - The cast Q&A is visible to **every visitor** opening the receiver
@@ -398,9 +406,9 @@ one cast per receiver per day, cross-continental only.
   own direction (computed in pixel space via `map.project/unproject`,
   recomputed on every `zoomend` so the offset stays visually
   consistent at any zoom).
-- Pending: bright gold `#F5B842`, opacity 0.85, dasharray "3 4",
+- Pending: bright flare amber `#ff9e3d`, opacity 0.85, dasharray "3 4",
   marching-ants animation via the `.cast-line-pending` class.
-- Answered: muted gold `#A87C32`, opacity 0.5 — same dasharray and
+- Answered: muted amber `#a86328`, opacity 0.5 — same dasharray and
   marching animation, just dimmer color + lower opacity. The
   marching never stops, by design (the animation is part of the
   feature's identity, not a "still pending" indicator).
@@ -555,9 +563,12 @@ The mosaic resets at midnight UTC alongside all other daily tables.
 - Pencil button is the **5th button** in the bottom toolbar, rightmost.
   Same 58px round shell as the others, stroked SVG (`viewBox 24 24`).
   `.locked` class dims it when `!hasDroppedToday()`.
-- Realm overlay: full-screen frosted glass over the map (same recipe
-  as `#topNav` / `#hwToggle`: `rgba(5,12,22,0.6)` + `blur(12px)`).
-- Empty tiles in the mosaic = navy (`#0a1929`), filled tiles = artist's
+- Realm overlay: full-screen frosted glass over the map (matches the
+  rules modal recipe: `rgba(10, 18, 30, 0.55)` + `blur(3px)`). The
+  widget chrome (#topNav / #hwToggle / #bottomActions / leaflet zoom)
+  uses a slightly different recipe: `rgba(8, 17, 25, 0.6)` + `blur(12px)`.
+- Empty tiles in the mosaic = navy (`#0c1828`, matching the page bg),
+  filled tiles = artist's
   mood color + their strokes. The visitor's own assigned tile renders
   with their own mood color and a small pencil icon centered inside
   (same SVG paths as the toolbar button).
@@ -649,13 +660,12 @@ SELECT cron.schedule(
   is NULL.
 - Click a row → flyTo the dot and open its popup.
 - Mobile (<768px): renders as a collapsible carousel card. **Starts
-  collapsed on first load** (just the header bar with a chevron) so
-  the panel doesn't cover the map; tap the chevron to expand. The
-  `wireCarouselCollapse` IIFE applies the `.collapsed` class on init
-  for `innerWidth < 768`. Desktop keeps its default expanded state
-  since there's room for both. Auto-advance is suppressed while
-  collapsed (`startAutoAdvance` bails early on the `.collapsed`
-  check) so the slide timer doesn't tick uselessly behind a hidden
+  expanded on both desktop and mobile** (the previous mobile-
+  collapsed-by-default boot toggle was removed). The chevron stays
+  in place for anyone who wants to collapse manually. Auto-advance
+  is still suppressed while collapsed (`startAutoAdvance` bails
+  early on the `.collapsed` check) so the slide timer doesn't tick
+  uselessly behind a hidden
   body.
 - Hidden entirely when there are no messages today.
 - **Muted dots are excluded from the candidate pool** — see Personal mute
