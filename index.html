@@ -2700,6 +2700,52 @@
     </button>
   </div>
 </div>
+<script>
+/* Pre-paint the flare / cast / realm buttons in their correct
+   locked-vs-resting state before the browser hands off to the main
+   script. localStorage is synchronous, so every gate (dropped today,
+   shot today, cast today) resolves in microseconds. Without this, the
+   main script's sync calls fire after Supabase awaits and the user
+   sees a half-second flicker where each button sits in its HTML-default
+   state. The duplicated logic here intentionally mirrors what
+   syncFlareBtn / updateCastBtnState / syncRealmBtn do for the parts
+   that can be evaluated synchronously — keep them in sync if their
+   keys/conditions ever change. */
+(function preInitToolbarButtons() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    function readDay(key, field) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        if (obj && obj.date === today) return field ? obj[field] : obj;
+      } catch (e) {}
+      return null;
+    }
+    let dropped = false;
+    const msgs = readDay("hw-user-messages", "messages");
+    if (Array.isArray(msgs)) dropped = msgs.some(m => m.mine);
+    let shot = false;
+    const flares = readDay("hw-user-flares", "flares");
+    if (Array.isArray(flares)) shot = flares.length > 0;
+    const cast = !!readDay("hw-casted-today", "castId");
+    const castEnabled = new URLSearchParams(location.search).get("cast") !== "0";
+
+    const flareBtn = document.getElementById("flareBtn");
+    if (flareBtn) flareBtn.classList.toggle("locked", !dropped || shot);
+
+    const castBtn = document.getElementById("castBtn");
+    if (castBtn && castEnabled) {
+      castBtn.hidden = false;
+      if (!dropped || cast) castBtn.classList.add("locked");
+    }
+
+    const realmBtn = document.getElementById("realmBtn");
+    if (realmBtn && !dropped) realmBtn.classList.add("locked");
+  } catch (e) {}
+})();
+</script>
 
 <div id="hwPanel" class="empty" aria-label="heard around the world">
   <div class="hw-title">
@@ -7887,9 +7933,13 @@ function updateCastBtnState() {
   // ── LOCKED ──────────────────────────────────────────────────────
   // Mirrors the flare button gate: dim when the visitor can't use the
   // feature today at all (no dot dropped yet, or already cast).
+  // `loadMyCastId()` already date-stamps the localStorage entry, so a
+  // non-null value is authoritative for "cast today" — no need to
+  // cross-check the in-memory `casts` array (which fills row-by-row
+  // during boot's `loadCasts()` and was the source of a brief
+  // resting-amber flicker before the user's own row processed).
   const dropped = hasDroppedToday();
-  const myCastId = loadMyCastId();
-  const alreadyCast = !!(myCastId && casts.find(p => p.id === myCastId));
+  const alreadyCast = !!loadMyCastId();
   if (!dropped || alreadyCast) {
     castBtn.classList.add("locked");
     castBtn.classList.remove("active");
