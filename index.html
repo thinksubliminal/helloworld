@@ -1103,9 +1103,17 @@
     background: rgba(255, 255, 255, 0.06);
     color: rgba(255, 255, 255, 0.4);
     cursor: not-allowed;
-    transition: transform 0.15s ease, background 0.2s ease,
-                box-shadow 0.25s ease, color 0.2s ease,
-                border-color 0.2s ease, opacity 0.2s ease;
+    /* All visual properties share the same easing + duration so the
+       active → dormant fade resolves as one motion rather than a
+       staggered flicker. Transform stays a touch faster so press/hover
+       still feel snappy. */
+    transition:
+      background   0.28s ease,
+      box-shadow   0.28s ease,
+      color        0.28s ease,
+      border-color 0.28s ease,
+      opacity      0.28s ease,
+      transform    0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
