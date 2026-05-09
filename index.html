@@ -6045,6 +6045,7 @@ async function submit() {
   hideHint();
   syncDropPrompt();
   scheduleHeardPanelRender();
+  syncDropBtn();
   syncFlareBtn();
   updateCastBtnState();
   if (window.syncRealmBtn) window.syncRealmBtn();
@@ -6560,6 +6561,7 @@ if (IS_DEV_MODE) {
     dropBtn.disabled = false;
     syncDropPrompt();
     scheduleHeardPanelRender();
+    syncDropBtn();
     syncFlareBtn();
     updateCastBtnState();
     if (window.syncRealmBtn) window.syncRealmBtn();
@@ -7399,9 +7401,24 @@ function syncFlareBtn() {
   const dropped = hasDroppedToday();
   const shot = hasShotFlareToday();
   flareBtn.classList.toggle("locked", !dropped || shot);
-  flareBtn.setAttribute("aria-label", !dropped
+  const label = !dropped
     ? "drop a dot first to unlock flares"
-    : shot ? "you've shot a flare today" : "shoot a flare");
+    : shot ? "you've shot a flare today" : "shoot a flare";
+  flareBtn.setAttribute("aria-label", label);
+  flareBtn.setAttribute("title", label);
+}
+
+// Drop button gets a contextual hover tooltip (like cast and the
+// others). State is binary: resting if you haven't dropped today,
+// "already done" once you have.
+function syncDropBtn() {
+  if (!dropBtn) return;
+  const dropped = hasDroppedToday();
+  const label = dropped
+    ? "you've already left your mark today"
+    : "leave a message";
+  dropBtn.setAttribute("aria-label", label);
+  dropBtn.setAttribute("title", label);
 }
 
 // Flare placement is a two-step interaction:
@@ -8515,6 +8532,7 @@ function buildCastSection(msg, wrap) {
   }
 
   renderHeardPanel();
+  syncDropBtn();
   syncFlareBtn();
   updateCastBtnState();
   if (window.syncRealmBtn) window.syncRealmBtn();
@@ -9473,9 +9491,11 @@ function buildCastSection(msg, wrap) {
       if (!elBtn) return;
       const dropped = typeof hasDroppedToday === "function" && hasDroppedToday();
       elBtn.classList.toggle("locked", !dropped);
-      elBtn.setAttribute("aria-label", dropped
+      const label = dropped
         ? "enter the drawing realm"
-        : "drop a dot first to unlock the drawing realm");
+        : "drop a dot first to unlock the drawing realm";
+      elBtn.setAttribute("aria-label", label);
+      elBtn.setAttribute("title", label);
     }
     window.syncRealmBtn = syncRealmBtn;
     syncRealmBtn();
