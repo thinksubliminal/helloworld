@@ -3182,83 +3182,13 @@ const TREASURE_CHEST_SVG = `<svg viewBox="0 0 365 304" xmlns="http://www.w3.org/
   </g>
 </svg>`;
 
-// Curated land coordinates for the hourly treasure-chest position.
-// ~52 entries spread across 6 continents with deliberately rough per-
-// continent quotas (12 Asia, 10 Africa, 10 Europe, 8 North America,
-// 7 South America, 5 Oceania). All points are well-known cities and
-// hand-picked rather than random GIS samples.
-//
-// Spawn bounds: latitude in [-60, 70], longitude in [-170, 170]. This
-// keeps the chest on or near major land masses, away from the extreme
-// polar edges of the map (where it's hard to navigate to and easily
-// hidden behind the bottom-of-screen UI). Antarctica research stations
-// were dropped on this basis — they spawned at lat -77 to -90 which
-// is below the visible map area on most zoom levels.
-const TREASURE_LAND_LOCATIONS = [
-  // Asia (12)
-  { lat:  35.6762, lng:  139.6503, country: "Japan",         continent: "Asia" },
-  { lat:  39.9042, lng:  116.4074, country: "China",         continent: "Asia" },
-  { lat:  19.0760, lng:   72.8777, country: "India",         continent: "Asia" },
-  { lat:  13.7563, lng:  100.5018, country: "Thailand",      continent: "Asia" },
-  { lat:  37.5665, lng:  126.9780, country: "South Korea",   continent: "Asia" },
-  { lat:   1.3521, lng:  103.8198, country: "Singapore",     continent: "Asia" },
-  { lat:  41.0082, lng:   28.9784, country: "Türkiye",       continent: "Asia" },
-  { lat:  25.2048, lng:   55.2708, country: "UAE",           continent: "Asia" },
-  { lat:  -6.2088, lng:  106.8456, country: "Indonesia",     continent: "Asia" },
-  { lat:  14.5995, lng:  120.9842, country: "Philippines",   continent: "Asia" },
-  { lat:  35.6892, lng:   51.3890, country: "Iran",          continent: "Asia" },
-  { lat:  24.8607, lng:   67.0011, country: "Pakistan",      continent: "Asia" },
-
-  // Africa (10)
-  { lat:  30.0444, lng:   31.2357, country: "Egypt",         continent: "Africa" },
-  { lat:   6.5244, lng:    3.3792, country: "Nigeria",       continent: "Africa" },
-  { lat:  -1.2921, lng:   36.8219, country: "Kenya",         continent: "Africa" },
-  { lat: -33.9249, lng:   18.4241, country: "South Africa",  continent: "Africa" },
-  { lat:  31.6295, lng:   -7.9811, country: "Morocco",       continent: "Africa" },
-  { lat:   9.0300, lng:   38.7400, country: "Ethiopia",      continent: "Africa" },
-  { lat:  14.7167, lng:  -17.4677, country: "Senegal",       continent: "Africa" },
-  { lat:  -4.4419, lng:   15.2663, country: "DR Congo",      continent: "Africa" },
-  { lat:   5.6037, lng:   -0.1870, country: "Ghana",         continent: "Africa" },
-  { lat:  36.7538, lng:    3.0588, country: "Algeria",       continent: "Africa" },
-
-  // Europe (10)
-  { lat:  51.5074, lng:   -0.1278, country: "United Kingdom", continent: "Europe" },
-  { lat:  48.8566, lng:    2.3522, country: "France",        continent: "Europe" },
-  { lat:  41.9028, lng:   12.4964, country: "Italy",         continent: "Europe" },
-  { lat:  52.5200, lng:   13.4050, country: "Germany",       continent: "Europe" },
-  { lat:  40.4168, lng:   -3.7038, country: "Spain",         continent: "Europe" },
-  { lat:  37.9838, lng:   23.7275, country: "Greece",        continent: "Europe" },
-  { lat:  59.3293, lng:   18.0686, country: "Sweden",        continent: "Europe" },
-  { lat:  48.2082, lng:   16.3738, country: "Austria",       continent: "Europe" },
-  { lat:  50.0755, lng:   14.4378, country: "Czechia",       continent: "Europe" },
-  { lat:  38.7223, lng:   -9.1393, country: "Portugal",      continent: "Europe" },
-
-  // North America (8)
-  { lat:  40.7128, lng:  -74.0060, country: "United States", continent: "North America" },
-  { lat:  34.0522, lng: -118.2437, country: "United States", continent: "North America" },
-  { lat:  19.4326, lng:  -99.1332, country: "Mexico",        continent: "North America" },
-  { lat:  43.6532, lng:  -79.3832, country: "Canada",        continent: "North America" },
-  { lat:  41.8781, lng:  -87.6298, country: "United States", continent: "North America" },
-  { lat:  49.2827, lng: -123.1207, country: "Canada",        continent: "North America" },
-  { lat:  23.1136, lng:  -82.3666, country: "Cuba",          continent: "North America" },
-  { lat:   8.9824, lng:  -79.5199, country: "Panama",        continent: "North America" },
-
-  // South America (7)
-  { lat: -22.9068, lng:  -43.1729, country: "Brazil",        continent: "South America" },
-  { lat: -34.6037, lng:  -58.3816, country: "Argentina",     continent: "South America" },
-  { lat: -12.0464, lng:  -77.0428, country: "Peru",          continent: "South America" },
-  { lat: -33.4489, lng:  -70.6693, country: "Chile",         continent: "South America" },
-  { lat:   4.7110, lng:  -74.0721, country: "Colombia",      continent: "South America" },
-  { lat:  10.4806, lng:  -66.9036, country: "Venezuela",     continent: "South America" },
-  { lat: -16.5000, lng:  -68.1500, country: "Bolivia",       continent: "South America" },
-
-  // Oceania (5)
-  { lat: -33.8688, lng:  151.2093, country: "Australia",     continent: "Oceania" },
-  { lat: -37.8136, lng:  144.9631, country: "Australia",     continent: "Oceania" },
-  { lat: -36.8485, lng:  174.7633, country: "New Zealand",   continent: "Oceania" },
-  { lat: -41.2865, lng:  174.7762, country: "New Zealand",   continent: "Oceania" },
-  { lat: -18.1416, lng:  178.4419, country: "Fiji",          continent: "Oceania" }
-];
+// Treasure chest now spawns at sea, not on land — see the rewritten
+// `getTreasureChestForHour` below. The chest reuses BOTTLE_OCEAN_LOCATIONS
+// (already vetted for navigability and named) with a different seed so
+// chest and bottle don't follow the same path. The old hand-curated
+// `TREASURE_LAND_LOCATIONS` and `TREASURE_CONTINENTS` were removed when
+// the chest moved offshore; recover from git history if it ever needs
+// to come back to land.
 
 // ───────────── CITY DATABASE (for nearest-city labeling) ─────────────
 const CITIES = [
@@ -5266,19 +5196,10 @@ function scheduleBottleTick() {
 // "don't yank the popup out from under the user" behavior is already
 // correct without a follow-up edit.
 
-// Continents the chest rotates through, in canonical order. Antarctica
-// was dropped because all of its candidate locations (research stations
-// at lat -77 to -90) fall outside the chest spawn bounds defined in
-// the TREASURE_LAND_LOCATIONS comment above.
-const TREASURE_CONTINENTS = [
-  "Asia", "Africa", "Europe",
-  "North America", "South America", "Oceania"
-];
-
 const treasureChestLayer = L.layerGroup();
 let treasureChestMarker = null;
 let treasureChestHourTimer = null;
-let treasureChestCurrent = null;  // { hour, dateStr, continent, location }
+let treasureChestCurrent = null;  // { hour, dateStr, location }
 
 // ───────────── CHEST CLAIMS ─────────────
 // One claim per UTC hour, enforced by the `chest_claims.hour_key` UNIQUE
@@ -5329,39 +5250,24 @@ const TREASURE_CHEST_PROMPT_DROP =
 const TREASURE_CHEST_ALREADY_CLAIMED =
   "The treasure has already been claimed. Drop a dot to be ready next hour.";
 
-// Continent round-robin: each round of 7 hours visits each continent
-// exactly once, in a shuffled order. The seed is per-(date, round) so
-// the order varies day-to-day AND round-to-round within a single day,
-// preventing the chest from following the same path across rounds.
-// `0x5A827999` per spec — keeps this stream of randomness independent
-// of the bottle's stream (bottle uses `seedBase ^ 0x9E3779B9` for its
-// locations vs `seedBase` for messages).
+// Hourly ocean rotation. The chest now spawns at sea (same array as the
+// bottle, BOTTLE_OCEAN_LOCATIONS) but on its own seed stream so chest
+// and bottle don't coincide on the same spot every hour. With 40 ocean
+// locations and 24 hours/day plus a different seed, accidental same-
+// location overlap is rare (~once a day on average) and reads as a
+// happy coincidence rather than a bug. `0x5A827999` matches the old
+// chest seed base so the day-to-day rotation feel stays continuous
+// for any users who relied on the old cadence.
 function getTreasureChestForHour(date) {
   const dateStr = bottleUtcDateString(date);
   const hour = date.getUTCHours();
-  // Cycle length follows the actual continent count so adding/removing
-  // continents in TREASURE_CONTINENTS auto-adjusts the rotation.
-  const cycleLength = TREASURE_CONTINENTS.length;
-  const round = Math.floor(hour / cycleLength);
-  const indexInRound = hour % cycleLength;
-
   const seedBase = (bottleHashSeed(dateStr) ^ 0x5A827999) >>> 0;
-  // Different seed per round so the continent order changes each round.
-  const roundSeed = (seedBase + Math.imul(round, 0x9E3779B9)) >>> 0;
-  const rngContinents = bottleMulberry32(roundSeed);
-  const shuffledContinents = bottleSeededShuffle(TREASURE_CONTINENTS, rngContinents);
-  const continent = shuffledContinents[indexInRound];
-
-  // Per-hour seed for picking a location within the chosen continent.
-  // Distinct from `roundSeed` so two different hours that happen to
-  // land on the same continent (in different rounds) usually pick
-  // different cities.
-  const locSeed = (seedBase + Math.imul(hour, 0x85EBCA6B)) >>> 0;
-  const rngLoc = bottleMulberry32(locSeed);
-  const candidates = TREASURE_LAND_LOCATIONS.filter(l => l.continent === continent);
-  const location = candidates[Math.floor(rngLoc() * candidates.length)];
-
-  return { hour, dateStr, continent, location };
+  const locSeed  = (seedBase + Math.imul(hour, 0x85EBCA6B)) >>> 0;
+  const rng      = bottleMulberry32(locSeed);
+  const location = BOTTLE_OCEAN_LOCATIONS[
+    Math.floor(rng() * BOTTLE_OCEAN_LOCATIONS.length)
+  ];
+  return { hour, dateStr, location };
 }
 
 function treasureChestIconHtml() {
