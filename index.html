@@ -3603,6 +3603,40 @@ function nearestCity(lat, lng) {
 //
 // Called from compose / submit paths only — NOT from the flare aim label,
 // which fires on every mousemove and would melt the API.
+// Strip ISO 3166 / Nominatim / US-Census artifacts that make geocoded
+// location strings unnecessarily long and bureaucratic. Applied at
+// reverseGeocode time so new lookups go in clean, AND at popup-render
+// time so legacy data already in the DB cleans up without waiting for
+// the midnight wipe. Idempotent — running it twice is a no-op.
+function simplifyLocation(loc) {
+  if (!loc) return loc;
+  return loc
+    // "(the)" / "(The)" suffix on official country names. Also catches
+    // "(Islamic Republic of)" / "(Bolivarian Republic of)" / etc.
+    .replace(/\s*\([^)]*\)/g, "")
+    // Common official → common short forms.
+    .replace(/\bUnited States of America\b/gi, "USA")
+    .replace(/\bUnited Kingdom of Great Britain and Northern Ireland\b/gi, "UK")
+    .replace(/\bRussian Federation\b/gi, "Russia")
+    .replace(/\bRepublic of Korea\b/gi, "South Korea")
+    .replace(/\bDemocratic People['’]s Republic of Korea\b/gi, "North Korea")
+    .replace(/\bLao People['’]s Democratic Republic\b/gi, "Laos")
+    .replace(/\bSyrian Arab Republic\b/gi, "Syria")
+    .replace(/\bUnited Republic of Tanzania\b/gi, "Tanzania")
+    .replace(/\bDemocratic Republic of the Congo\b/gi, "DR Congo")
+    // US Census admin noise that BigDataCloud sometimes returns as the
+    // "city" field for unincorporated rural points.
+    .replace(/^Unorganized Territory of /i, "")
+    .replace(/^Township of /i, "")
+    .replace(/^Borough of /i, "")
+    .replace(/^City of /i, "")
+    // Cleanup of stray punctuation / whitespace from removed pieces.
+    .replace(/\s+/g, " ")
+    .replace(/,\s*,/g, ",")
+    .replace(/^[\s,]+|[\s,]+$/g, "")
+    .trim();
+}
+
 const reverseGeocodeCache = new Map();
 async function reverseGeocode(lat, lng) {
   // ~110m cache grid — same precision dots store at, so the cache hits
@@ -3642,6 +3676,7 @@ async function reverseGeocode(lat, lng) {
     else if (city) result = city;
     else if (country) result = country;
     if (!result) result = fallback;
+    result = simplifyLocation(result);
     reverseGeocodeCache.set(key, result);
     return result;
   } catch (e) {
@@ -4889,7 +4924,7 @@ function buildPopup(msg) {
     `<div class="msg-meta">` +
       `<span class="msg-mood" style="--c:${mood?.color || "#999"}">${escapeHtml(mood?.name || msg.mood)}</span>` +
       `<span class="msg-divider">·</span>` +
-      `<span class="msg-loc">${escapeHtml(msg.loc || "")}</span>` +
+      `<span class="msg-loc">${escapeHtml(simplifyLocation(msg.loc || ""))}</span>` +
     `</div>`;
 
   // Wire the actions menu. stopPropagation everywhere so clicks don't
@@ -7025,12 +7060,12 @@ function buildFlarePopup(flare) {
   // Eyebrow shows the AIM location (city/country or named body of water for
   // ocean flares) instead of the bare continent — gives "flare · pacific ocean"
   // for water targets and "flare · tokyo, japan" for land targets.
-  const eyebrowLoc = flare.loc || flare.continent || "";
+  const eyebrowLoc = simplifyLocation(flare.loc || flare.continent || "");
   let html =
     `<div class="flare-popup-eyebrow">flare · ${escapeHtml(eyebrowLoc)}</div>` +
     `<div class="flare-popup-q">${escapeHtml(optimistic(flare.text))}</div>` +
     `<div class="flare-popup-meta">` +
-      `<span>${isMine ? "your flare" : "from " + escapeHtml(flare.planter_loc || flare.continent || "")}</span>` +
+      `<span>${isMine ? "your flare" : "from " + escapeHtml(simplifyLocation(flare.planter_loc || flare.continent || ""))}</span>` +
     `</div>`;
 
   // The thread — every reply, oldest first. Wrapped in a fixed-height
