@@ -857,6 +857,14 @@
     fill: rgba(255, 255, 255, 0.85);
     filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.35));
   }
+  /* Same pencil shape as the realm toolbar button, scaled down. Uses
+     currentColor so the stroke inherits the white accent. */
+  .help-icon-realm {
+    width: 13px; height: 13px;
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.85);
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.35));
+  }
   .help-footer {
     margin-top: 6px;
     padding-top: 14px;
@@ -2887,6 +2895,16 @@
         <span>Cast</span>
       </div>
       <div class="help-section-body">Reach across the ocean. Open any dot from another continent that hasn't been cast to yet and trade short replies with them. One cast per day.</div>
+    </div>
+    <div class="help-section">
+      <div class="help-section-header">
+        <svg class="help-icon-realm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16.5 3.5 L20.5 7.5 L7.5 20.5 L3.5 20.5 L3.5 16.5 Z"/>
+          <path d="M14 6 L18 10"/>
+        </svg>
+        <span>Realm</span>
+      </div>
+      <div class="help-section-body">Paint one tile on a shared 100-tile canvas. Today's collective drawing is preserved forever as a public artwork. One tile per day.</div>
     </div>
     <div class="help-section">
       <div class="help-section-header">
