@@ -78,13 +78,34 @@ no likes.
   header label when reverse-geocode comes back empty.
 
 ## Character limits
-- All text inputs (dot messages, flares, flare responses, cast
-  questions, cast answers) are capped at **100 characters** in the
-  client UI. Validation gates run at: `<textarea maxlength>`, the
-  visible counter, the submit-button enable check, and the final
-  pre-insert length guard. The DB CHECK constraints on `text`/
-  `question`/`answer` columns remain at the original 280 as a
-  permissive backstop — UI is the strict surface.
+The pattern across the site is "openers get 100, replies get 50,
+conversations cap at 500 chars total." Specifically:
+
+- **Dot message** — 100 chars.
+- **Flare question** (the opener) — 100 chars. Not counted toward
+  the 500-char thread budget.
+- **Flare reply** — 50 chars per reply, 500 chars total across all
+  replies on a flare. Atomic budget enforcement via the
+  `insert_flare_response` RPC (see Flares section).
+- **Cast question** (the opener) — 100 chars. Not counted toward
+  the 500-char thread budget.
+- **Cast turn** — 50 chars per turn, 500 chars total across all
+  turns on a cast. Atomic budget enforcement via the
+  `insert_cast_turn` RPC (see Cast section).
+
+Client-side validation gates run at: `<textarea maxlength>`, the
+visible counter, the submit-button enable check, and the final
+pre-insert length guard. DB CHECK constraints back the per-message
+caps (1..50 on `flare_responses.text` and `cast_turns.text`; 280 as
+a permissive backstop on the older `messages.text`, `flares.text`,
+`casts.question` columns — UI is the strict surface there).
+
+For thread-level budgets (the 500-char total), the RPCs are the
+authoritative gate: client-side maxlength shrinks dynamically as
+the budget runs out (`min(50, remaining)`), and the RPC raises
+`P0002 thread_full` if a turn would push past the cap. Two
+simultaneous inserts can't both succeed past the cap because the
+RPC locks the parent row before reading the running total.
 
 ## Translation
 - Backend is **MyMemory** (`https://api.mymemory.translated.net/get`).
