@@ -5773,11 +5773,14 @@ function buildCountriesLayer() {
     interactive: false,
     pane: "countryPane",
     smoothFactor: 1.2,
-    // Canvas renderer redraws faster than SVG for large polygons,
-    // and the 0.5 padding pre-renders an extra 50% of viewport on
-    // each side so a quick pan doesn't outrun the rendered area
-    // (the "background map briefly disappears" flicker).
-    renderer: L.canvas({ padding: 0.5, pane: "countryPane" })
+    // Canvas renderer redraws faster than SVG for large polygons.
+    // Padding pre-renders extra viewport on each side so a quick pan
+    // doesn't outrun the rendered area. 0.5 (renderer buffer 4×
+    // viewport area) was killing wide-screen perf — on a 5K it's a
+    // ~33MP buffer redrawn on every map operation. 0.15 keeps a small
+    // headroom for normal pans (1.69× viewport area) while cutting
+    // pixel work ~2.4× on huge displays.
+    renderer: L.canvas({ padding: 0.15, pane: "countryPane" })
   });
   countriesLayer.addTo(map);
 }
@@ -9430,6 +9433,15 @@ function buildCastSection(msg, wrap) {
 // to focus doesn't teleport birds across the screen.
 // ─────────────────────────────────────────────────────────────────────────
 (function birdFlocks() {
+  // Skip the layer entirely above this CSS-pixel width. Even with the
+  // backing-buffer cap and the rAF stop-when-idle, the bird canvas
+  // pulls enough main-thread time on bigger displays to make the rest
+  // of the site feel laggy. Threshold is empirical — measured on a
+  // 5K iMac as the widest window where the site still feels smooth.
+  // Birds are atmospheric polish; no birds beats a sluggish map.
+  const BIRD_MAX_WIDTH = 1875;
+  if (window.innerWidth >= BIRD_MAX_WIDTH) return;
+
   const canvas = document.createElement("canvas");
   canvas.id = "birdCanvas";
   canvas.style.cssText =
@@ -9439,14 +9451,31 @@ function buildCastSection(msg, wrap) {
   const ctx = canvas.getContext("2d");
 
   function resize() {
-    // Cap DPR at 1.5 — birds are soft 5px silhouettes, they don't need
-    // 2x retina sharpness, and the saving is huge on big monitors. A 5K
-    // Studio Display at 2x = 59 megapixel backing buffer per frame; at
-    // 1.5x it's 33MP. Half the per-frame pixel work, no visible loss.
+    // Two-step throttle on the backing buffer:
+    // 1) Cap DPR at 1.5 — birds are soft 5px silhouettes, they don't
+    //    need 2x retina sharpness.
+    // 2) Cap the largest backing dimension at 3000px. Beyond that, the
+    //    canvas renders at lower resolution and CSS stretches it to
+    //    full viewport. Invisible for soft silhouettes; on a 5K iMac
+    //    this drops the per-frame pixel work from ~33MP to ~5MP, which
+    //    is the difference between "the whole page feels sluggish" and
+    //    "smooth." `transformScale` is what we'd otherwise multiply by
+    //    DPR — same role, just compensating for the size cap too.
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    canvas.width  = Math.max(1, Math.floor(window.innerWidth  * dpr));
-    canvas.height = Math.max(1, Math.floor(window.innerHeight * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    let backingW = cssW * dpr;
+    let backingH = cssH * dpr;
+    const CAP = 3000;
+    if (backingW > CAP || backingH > CAP) {
+      const ratio = CAP / Math.max(backingW, backingH);
+      backingW *= ratio;
+      backingH *= ratio;
+    }
+    canvas.width  = Math.max(1, Math.floor(backingW));
+    canvas.height = Math.max(1, Math.floor(backingH));
+    const transformScale = backingW / cssW;
+    ctx.setTransform(transformScale, 0, 0, transformScale, 0, 0);
   }
   resize();
   window.addEventListener("resize", resize);
@@ -9602,6 +9631,7 @@ function buildCastSection(msg, wrap) {
         bornAt: now,
       });
     }
+    startLoop();
   }
 
   function drawWing(b, sweep, side, scale) {
@@ -9658,6 +9688,7 @@ function buildCastSection(msg, wrap) {
   }
 
   let lastT = 0;
+  let frameId = 0;
   function frame(t) {
     const dt = lastT ? Math.min((t - lastT) / 1000, 0.05) : 0;
     lastT = t;
@@ -9680,25 +9711,59 @@ function buildCastSection(msg, wrap) {
         }
       }
     }
-    requestAnimationFrame(frame);
+    // Stop the loop entirely when no birds are flying — birds are
+    // active maybe ~30s of every 60-90s cycle, and on a 5K display the
+    // per-frame clearRect alone is enough main-thread work to make the
+    // whole site feel sluggish during the idle gaps. The loop kicks
+    // back on inside spawnFlock().
+    if (birds.length) {
+      frameId = requestAnimationFrame(frame);
+    } else {
+      frameId = 0;
+    }
   }
-  requestAnimationFrame(frame);
+  function startLoop() {
+    if (frameId === 0) {
+      lastT = 0;
+      frameId = requestAnimationFrame(frame);
+    }
+  }
 
+  let nextSpawnTimer = 0;
   function scheduleNext() {
-    const delay = 45000 + Math.random() * 30000; // 45–75s
-    setTimeout(() => {
+    const delay = 55000 + Math.random() * 10000; // 55–65s
+    nextSpawnTimer = setTimeout(() => {
       // If user is reading a popup / in the realm, retry sooner so the
       // next flock arrives shortly after they close it.
       if (userAttentionElsewhere()) {
-        setTimeout(scheduleNext, 5000 + Math.random() * 5000);
+        nextSpawnTimer = setTimeout(scheduleNext, 5000 + Math.random() * 5000);
       } else {
         spawnFlock();
         scheduleNext();
       }
     }, delay);
   }
-  setTimeout(() => { spawnFlock(); scheduleNext(); },
-             4000 + Math.random() * 6000);
+  // First flock arrives within 1–5s so a visitor sees birds before they
+  // could bounce; then a steady ~one-minute cadence after that.
+  nextSpawnTimer = setTimeout(() => { spawnFlock(); scheduleNext(); },
+             1000 + Math.random() * 4000);
+
+  // If the visitor drags the window onto a wide display (laptop →
+  // external 5K, fullscreen on a 4K, etc.) after birds have already
+  // started, tear the whole layer down. Asymmetric on purpose: we
+  // don't re-spawn when shrinking back — the gain is marginal and a
+  // refresh restores everything cleanly.
+  let tornDown = false;
+  window.addEventListener("resize", () => {
+    if (tornDown) return;
+    if (window.innerWidth >= BIRD_MAX_WIDTH) {
+      tornDown = true;
+      if (frameId) cancelAnimationFrame(frameId);
+      if (nextSpawnTimer) clearTimeout(nextSpawnTimer);
+      birds.length = 0;
+      canvas.remove();
+    }
+  });
 })();
 
 // ───────────── PWA: service worker registration ─────────────
