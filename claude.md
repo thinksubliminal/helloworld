@@ -302,13 +302,15 @@ create policy "anyone can insert flare responses" on flare_responses
 - Console: `resetMyFlare()` clears today's flare lock.
 
 ## Cast
-A third interaction type, in the same family as flares. A user opens
-someone else's dot popup, taps the cast button in the bottom toolbar,
-asks one question, and that dot's owner gets exactly one chance to
-reply back. A gold dashed line connects the two dots on the map for
-both pending and answered casts (marching ants throughout; answered
-state just fades the color and opacity). One cast per sender per day,
-one cast per receiver per day, cross-continental only.
+A third interaction type. A visitor opens someone else's dot popup,
+taps the cast button in the bottom toolbar, and sends a 100-char
+question to that specific person across the ocean. The dot's owner
+answers, and from that point both parties take turns adding short
+replies until they exhaust a shared 500-char budget across the
+back-and-forth. The thread then locks for the day. A gold dashed
+line connects the two dots on the map (marching ants throughout,
+dims to settled amber when the thread closes). One cast per sender
+per day, one cast per receiver per day, cross-continental only.
 
 ### Feature flag
 - `IS_CAST_ENABLED` defaults to **true** for all visitors. The URL
@@ -319,30 +321,66 @@ one cast per receiver per day, cross-continental only.
   references to the old name remain.
 
 ### Tables
-- `casts` (id, sender_dot_id, receiver_dot_id, question, answer,
-  created_at). The cast itself: who sent, to whom, the question,
-  and the (possibly null) answer.
+- `casts` (id, sender_dot_id, receiver_dot_id, question, created_at).
+  The cast metadata + the original question (the opener — same role
+  as flares.text).
+- `cast_turns` (id, cast_id, speaker_id, text, created_at). Every
+  back-and-forth message after the opener. 50 chars per turn (DB
+  CHECK), 500 chars total per thread (RPC-enforced).
+- `casts.answer` is a deprecated dead column from the previous one-
+  question/one-answer model (2026-05-09 superseded). The current
+  client neither reads nor writes it. It can stay or be dropped
+  later without affecting the app.
 - `sender_dot_id` and `receiver_dot_id` reference `messages.id` by
   convention (no FK constraint — same client-trust pattern as
   flares).
-- Daily reset: `casts` is included in the midnight UTC TRUNCATE
-  cron job alongside `flare_responses`, `flares`, `messages`.
+- Daily reset: `casts` and `cast_turns` are both included in the
+  midnight UTC TRUNCATE cron job.
 
-### RLS
-- `casts` SELECT public, INSERT public (`question` non-empty,
-  sender/receiver non-null).
-- UPDATE policy is restricted: only rows where `answer IS NULL` can
-  be updated, and the new row must satisfy `answer IS NOT NULL`.
-  This makes "first answer wins" atomic at the database level —
-  two concurrent answer attempts on the same cast produce exactly
-  one success.
-- DB-level constraints enforce the rules:
-  - `UNIQUE (sender_dot_id)` → one cast per sender per day (since
-    each user has at most one dot per day).
-  - `UNIQUE (receiver_dot_id)` → each dot can be cast to at most
-    once per day.
-  - `CHECK (sender_dot_id != receiver_dot_id)` → can't cast to
-    your own dot.
+### RLS / constraints — current state (2026-05-09)
+- `casts`:
+  - SELECT public, INSERT public (`question` non-empty,
+    sender/receiver non-null).
+  - **No UPDATE policy.** The previous "first answer wins" policy was
+    dropped when casts moved off the answer column.
+  - DB-level constraints:
+    - `UNIQUE (sender_dot_id)` → one cast per sender per day.
+    - `UNIQUE (receiver_dot_id)` → each dot can be cast to at most
+      once per day.
+    - `CHECK (sender_dot_id != receiver_dot_id)` → can't cast to
+      your own dot.
+- `cast_turns`:
+  - SELECT public.
+  - **No INSERT policy.** All inserts go through the
+    `insert_cast_turn(p_cast_id, p_speaker_id, p_text)` RPC, which:
+    1. Validates the turn is 1–50 chars (raises `P0001
+       reply_invalid_length`).
+    2. Locks the parent `casts` row with `SELECT ... FOR UPDATE`.
+    3. Sums `char_length(text)` across existing turns for the cast.
+       If `existing + new > 500`, raises `P0002 thread_full`
+       (surfaced as "this conversation is closed.").
+    4. Otherwise inserts and returns the row.
+  - DB CHECK: `char_length(text) BETWEEN 1 AND 50`.
+- The 500-char shared budget is **turns-only** — the original cast
+  question is separate. Atomic enforcement at the DB level is
+  essential — without the row lock, two simultaneous turns could
+  both think they have room and overflow the budget.
+
+### Turn alternation
+- Receiver answers first (after the sender's opener).
+- After that, sender ↔ receiver alternate.
+- Alternation is **client-side**: the respond UI is only rendered
+  when it's the visitor's turn. A determined attacker could insert
+  out-of-turn via the RPC, but identity is honor-system everywhere
+  on the site, so this is the same trust model as elsewhere.
+- Inferring the visitor's role:
+  - Receiver → `msg.mine && msg.id === cast.receiver_dot_id` (the
+    visitor's own dot is the cast's target).
+  - Sender → `myDot && myDot.id === cast.sender_dot_id`.
+  - Last speaker → `cast_turns[last].speaker_id`.
+  - It's the visitor's turn if last speaker isn't them AND they're
+    a participant. (Receiver gets the first turn when the thread is
+    empty.)
 
 ### Cross-continental rule
 - Sender's dot and receiver's dot must be on different continents.
@@ -387,36 +425,21 @@ one cast per receiver per day, cross-continental only.
   a window on mobile where the flag could leak across popups and
   auto-render the question form in a fresh dot's popup.
 
-### Q&A visibility (public)
-- The cast Q&A is visible to **every visitor** opening the receiver
-  dot's popup, not just the sender or receiver. Same model as
-  flare Q&A (anyone viewing a flare popup sees the question and
-  the response). The polyline on the map was already public; the
-  Q&A is now public to match.
-- `buildCastSection` cases:
-  - **A** — viewer is the receiver (`isMine` and `incoming`):
-    show the question + answer form (so the receiver can answer
-    on the device that owns the dot's `mine` flag).
-  - **B** — viewer is the sender (`myCast.receiver_dot_id ===
-    msg.id` via the `hw-casted-today` localStorage key): show
-    the question + the answer (or "awaiting reply to cast"
-    placeholder).
-  - **C** — viewer is a potential sender who tapped the toolbar
-    `#castBtn` for this dot: show the inline send form.
-  - **D** — none of the above, but `castsByReceiver` has an
-    entry for this dot: render the question + answer (or the
-    "awaiting reply" placeholder) **read-only**. This is the
-    catch-all that makes the Q&A public to third-party visitors
-    AND to the same person viewing from a second device (since
-    identity is localStorage-bound and there's no cross-device
-    auth — without case D, the marching-ants line draws but the
-    Q&A is silently blank from any browser other than the one
-    that originally sent or received it).
-- This is the right default for the app: see the public-by-
-  default principle in the project memory. Action capability
-  (sending, answering) stays scoped to the device that holds
-  the relevant localStorage; only **content visibility** is
-  universal.
+### Thread visibility (public)
+- The cast question and every turn in the thread are visible to
+  **every visitor** opening the receiver dot's popup, not just the
+  sender or receiver. The polyline on the map was already public;
+  the thread matches that.
+- `buildCastSection` collapses the previous A/B/D cases into one
+  thread-rendering branch (when `castsByReceiver.get(msg.id)`
+  exists), with the respond UI gated on `viewerIsParticipant &&
+  isMyTurn && !isFull`. Case C — viewer wants to send a NEW cast,
+  popup opened via `castFormOpenForId` — is unchanged and only
+  fires when no cast exists for the dot yet.
+- Action capability (sending the opener, taking a turn) stays
+  scoped to the device whose localStorage matches; content
+  visibility (everyone sees the thread) is universal. Same
+  pattern as flares.
 
 ### Map line rendering
 - Polyline drawn in `castLayer` (Leaflet layer group). Endpoints
@@ -424,12 +447,15 @@ one cast per receiver per day, cross-continental only.
   own direction (computed in pixel space via `map.project/unproject`,
   recomputed on every `zoomend` so the offset stays visually
   consistent at any zoom).
-- Pending: bright flare amber `#ff9e3d`, opacity 0.85, dasharray "3 4",
-  marching-ants animation via the `.cast-line-pending` class.
-- Answered: muted amber `#a86328`, opacity 0.5 — same dasharray and
-  marching animation, just dimmer color + lower opacity. The
-  marching never stops, by design (the animation is part of the
-  feature's identity, not a "still pending" indicator).
+- Active (thread has budget remaining): bright flare amber `#ff9e3d`,
+  opacity 0.85, dasharray "3 4", marching-ants animation via the
+  `.cast-line-pending` class.
+- Closed (thread budget exhausted, 500 chars used across all turns):
+  muted amber `#a86328`, opacity 0.5 — same dasharray and marching
+  animation, just dimmer color + lower opacity. The marching never
+  stops, by design. The dim transition fires inside
+  `applyCastTurnRow` the moment the new turn pushes total chars to
+  ≥500.
 - Send animation: when sendCast() succeeds,
   `playCastLineDrawAnimation` tweens the polyline's second endpoint
   from sender to receiver in lat/lng space over 700ms (ease-out

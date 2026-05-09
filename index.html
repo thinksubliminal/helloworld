@@ -7674,6 +7674,10 @@ const CAST_TRIGGER_ICON =
 const casts = [];
 const castsByReceiver = new Map();    // receiver_dot_id → cast
 const castsBySender = new Map();      // sender_dot_id → cast
+// Cast back-and-forth turns. Keyed by cast_id; each entry is an array
+// of turn rows ordered oldest-first. The cast's question stays on the
+// `casts` row (the opener); everything after lives in `cast_turns`.
+const castTurnsByCastId = new Map();
 // Each entry: { line: L.polyline, sender: msg, receiver: msg }
 // We keep references to the source dots so endpoints can be recomputed
 // on zoomend (pixel-space shortening → lat/lng changes per zoom level).
@@ -7762,21 +7766,7 @@ function saveMyCastId(castId) {
 function applyCastRow(row) {
   if (!row || !row.id) return false;
   const existing = casts.find(p => p.id === row.id);
-  if (existing) {
-    // Answer arriving on a previously-known cast → swap the line to
-    // the "exchange complete" appearance: darker color + lower opacity.
-    // The marching-ants animation keeps running regardless of state —
-    // every cast line marches forever, by design.
-    if (!existing.answer && row.answer) {
-      existing.answer = row.answer;
-      const entry = castLines.get(row.id);
-      if (entry) entry.line.setStyle({ color: CAST_LINE_COLOR_ANSWERED, opacity: 0.5 });
-      // If the sender's popup is open looking at the receiver's dot,
-      // refresh it so "awaiting reply to cast" flips to the actual answer.
-      refreshOpenDotPopup(row.receiver_dot_id);
-    }
-    return false;
-  }
+  if (existing) return false;
   casts.push(row);
   castsByReceiver.set(row.receiver_dot_id, row);
   castsBySender.set(row.sender_dot_id, row);
@@ -7804,18 +7794,23 @@ function drawCastLine(cast) {
   const sender = messages.find(m => m.id === cast.sender_dot_id);
   const receiver = messages.find(m => m.id === cast.receiver_dot_id);
   if (!sender || !receiver) return;
-  // Pending: bright gold, dashed, marching ants, opacity 0.85.
-  // Answered: muted darker gold, dashed, marching ants, opacity 0.5.
-  // The marching animation runs for both states — only color and
-  // opacity differ between pending and answered.
-  const isAnswered = !!cast.answer;
+  // Active (thread has budget): bright gold, dashed, marching ants,
+  // opacity 0.85. Closed (thread budget exhausted): muted darker gold,
+  // same dashes and animation, opacity 0.5. The marching never stops.
+  // Compute closed-state from existing cast_turns at draw time so a
+  // late-arriving line for an already-full thread renders correctly.
+  const turnsForCast = castTurnsByCastId.get(cast.id) || [];
+  const usedChars = turnsForCast.reduce(
+    (sum, t) => sum + ((t.text && t.text.length) || 0), 0
+  );
+  const isFull = usedChars >= 500;
   const line = L.polyline(
     castEndpoints(sender, receiver),
     {
-      color: isAnswered ? CAST_LINE_COLOR_ANSWERED : CAST_LINE_COLOR,
+      color: isFull ? CAST_LINE_COLOR_ANSWERED : CAST_LINE_COLOR,
       weight: CAST_LINE_WEIGHT,
       dashArray: CAST_LINE_DASH_PENDING,
-      opacity: isAnswered ? 0.5 : 0.85,
+      opacity: isFull ? 0.5 : 0.85,
       interactive: false,
       // Use the shared castLineRenderer (SVG with padding: 2) so the
       // .cast-line-pending CSS animation has a real DOM element to
@@ -7866,7 +7861,7 @@ async function loadCasts() {
   try {
     const { data, error } = await sb
       .from("casts")
-      .select("id, sender_dot_id, receiver_dot_id, question, answer, created_at")
+      .select("id, sender_dot_id, receiver_dot_id, question, created_at")
       .gte("created_at", todayMidnightUTC())
       .order("created_at", { ascending: true });
     if (error) {
@@ -7876,6 +7871,51 @@ async function loadCasts() {
     for (const row of data || []) applyCastRow(row);
   } catch (e) {
     console.warn("[cast] initial fetch threw:", e);
+  }
+}
+
+// Cast turns: every back-and-forth message after the opener.
+// Idempotent apply — boot fetch and polling both call this without
+// duplicating state. Returns true if a NEW turn was added.
+function applyCastTurnRow(row) {
+  if (!row || !row.id || !row.cast_id) return false;
+  let arr = castTurnsByCastId.get(row.cast_id);
+  if (!arr) {
+    arr = [];
+    castTurnsByCastId.set(row.cast_id, arr);
+  }
+  if (arr.some(t => t.id === row.id)) return false;
+  arr.push(row);
+  // Keep oldest-first ordering even if rows arrive out of sequence.
+  arr.sort((a, b) => {
+    const at = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return at - bt;
+  });
+  // Dim the line the moment the budget is exhausted.
+  const used = arr.reduce((sum, t) => sum + ((t.text && t.text.length) || 0), 0);
+  if (used >= 500) {
+    const entry = castLines.get(row.cast_id);
+    if (entry) entry.line.setStyle({ color: CAST_LINE_COLOR_ANSWERED, opacity: 0.5 });
+  }
+  return true;
+}
+
+async function loadCastTurns() {
+  if (!IS_CAST_ENABLED) return;
+  try {
+    const { data, error } = await sb
+      .from("cast_turns")
+      .select("id, cast_id, speaker_id, text, created_at")
+      .gte("created_at", todayMidnightUTC())
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.warn("[cast] turns initial fetch failed:", error.message);
+      return;
+    }
+    for (const row of data || []) applyCastTurnRow(row);
+  } catch (e) {
+    console.warn("[cast] turns initial fetch threw:", e);
   }
 }
 
@@ -7943,27 +7983,38 @@ function playCastLineDrawAnimation(entry) {
   requestAnimationFrame(step);
 }
 
-// Answer an unanswered cast. RLS allows updates only on rows where
-// answer IS NULL, so a second answer attempt (or two concurrent answer
-// races) silently fails for the loser.
-async function answerCast(castId, answer) {
+// Add a turn to a cast's back-and-forth thread via the atomic RPC.
+// The DB enforces:
+//   - 1..50 chars per turn (P0001 reply_invalid_length)
+//   - 500-char total budget across all turns (P0002 thread_full)
+// Turn alternation (sender ↔ receiver) is purely client-side — only
+// the side whose turn it is sees the respond UI.
+async function addCastTurn(castId, text) {
   if (!IS_CAST_ENABLED) return null;
   try {
     const { data, error } = await sb
-      .from("casts")
-      .update({ answer })
-      .eq("id", castId)
-      .is("answer", null)
-      .select()
+      .rpc("insert_cast_turn", {
+        p_cast_id: castId,
+        p_speaker_id: PLANTER_ID,
+        p_text: sanitizeProfanity(text)
+      })
       .single();
     if (error) {
-      console.warn("[cast] answer failed:", error.message);
+      console.warn("[cast] turn insert failed:", error.message);
       return null;
     }
-    applyCastRow(data);
+    if (!data) return null;
+    applyCastTurnRow(data);
+    // Refresh whichever open popup is showing this cast (sender or
+    // receiver dot — only one will actually have its popup open).
+    const cast = casts.find(c => c.id === castId);
+    if (cast) {
+      refreshOpenDotPopup(cast.sender_dot_id);
+      refreshOpenDotPopup(cast.receiver_dot_id);
+    }
     return data;
   } catch (e) {
-    console.warn("[cast] answer threw:", e);
+    console.warn("[cast] turn insert threw:", e);
     return null;
   }
 }
@@ -8090,9 +8141,9 @@ function buildCastSection(msg, wrap) {
 
   const isMine = !!msg.mine;
   const myDot = messages.find(m => m.mine);
-  const myCastId = loadMyCastId();
-  const myCast = myCastId ? casts.find(p => p.id === myCastId) : null;
-  const incoming = castsByReceiver.get(msg.id);
+  // The visitor's role for any cast involving this dot is computed
+  // inline below from `castsByReceiver` and `myDot.id` — no
+  // pre-resolved myCast / incoming locals needed.
 
   // Translation pipeline — mirrors buildFlarePopup. Paint cached or
   // original text on first render via `optimistic`, then async-swap
@@ -8131,16 +8182,18 @@ function buildCastSection(msg, wrap) {
   };
 
   // Builds the input + counter + send button block in flare-popup
-  // style. submitLabel = button text. onSubmit receives the trimmed
+  // style. `maxLen` is the per-input character cap (CAST_QUESTION_MAX
+  // for the opener, ≤50 for back-and-forth turns, possibly less when
+  // the thread budget is nearly spent). onSubmit receives the trimmed
   // text and returns a Promise; while it's pending the button is
   // disabled. If it resolves truthy the popup is rebuilt in place.
-  const makeRespondArea = (placeholder, submitLabel, onSubmit) => {
+  const makeRespondArea = (placeholder, submitLabel, maxLen, onSubmit) => {
     const area = document.createElement("div");
     area.className = "flare-popup-respond-area";
 
     const ta = document.createElement("textarea");
     ta.placeholder = placeholder;
-    ta.maxLength = CAST_QUESTION_MAX;
+    ta.maxLength = maxLen;
     stopBubble(ta);
     area.appendChild(ta);
 
@@ -8148,7 +8201,7 @@ function buildCastSection(msg, wrap) {
     actions.className = "flare-popup-respond-actions";
     const counter = document.createElement("span");
     counter.className = "flare-popup-counter";
-    counter.textContent = String(CAST_QUESTION_MAX);
+    counter.textContent = String(maxLen);
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "flare-btn-primary";
@@ -8160,9 +8213,9 @@ function buildCastSection(msg, wrap) {
 
     ta.addEventListener("input", () => {
       const len = ta.value.trim().length;
-      counter.textContent = String(CAST_QUESTION_MAX - ta.value.length);
-      counter.classList.toggle("over", ta.value.length > CAST_QUESTION_MAX);
-      btn.disabled = !(len > 0 && ta.value.length <= CAST_QUESTION_MAX);
+      counter.textContent = String(maxLen - ta.value.length);
+      counter.classList.toggle("over", ta.value.length > maxLen);
+      btn.disabled = !(len > 0 && ta.value.length <= maxLen);
     });
 
     btn.addEventListener("click", async (ev) => {
@@ -8182,104 +8235,117 @@ function buildCastSection(msg, wrap) {
     return { area, focus: () => ta.focus() };
   };
 
-  // ── CASE A: I'm viewing my own dot, someone cast me. ───────────
-  if (isMine && incoming) {
+  // ── If a cast exists for this dot, render the thread.
+  // Combines old cases A/B/D — same view for any visitor, with the
+  // respond UI only shown to whoever's turn it actually is.
+  const relevantCast = castsByReceiver.get(msg.id);
+  if (relevantCast) {
     const section = makeSection();
+
+    // Opener (the original cast question — same role as flares.text).
     const q = document.createElement("div");
     q.className = "flare-popup-q";
-    q.textContent = optimistic(incoming.question);
+    q.textContent = optimistic(relevantCast.question);
     section.appendChild(q);
-    replaceWhenReady(q, incoming.question);
+    replaceWhenReady(q, relevantCast.question);
 
-    if (incoming.answer) {
-      const a = document.createElement("div");
-      a.className = "flare-popup-response";
-      a.style.marginTop = "12px";
-      a.textContent = optimistic(incoming.answer);
-      section.appendChild(a);
-      replaceWhenReady(a, incoming.answer);
-    } else {
-      const { area } = makeRespondArea("say something back...", "answer",
-        (text) => answerCast(incoming.id, text));
-      section.appendChild(area);
+    // Thread state.
+    const turns = castTurnsByCastId.get(relevantCast.id) || [];
+    const used = turns.reduce((sum, t) => sum + ((t.text && t.text.length) || 0), 0);
+    const remaining = Math.max(0, 500 - used);
+    const isFull = remaining <= 0;
+
+    // Viewer role for this cast. The receiver's dot is `msg` in this
+    // branch (cast popups are always rendered on the receiver's dot
+    // popup). The sender is identified by their own dot matching the
+    // cast's sender_dot_id.
+    const viewerIsReceiver = isMine; // msg is always the receiver dot here
+    const viewerIsSender = !!myDot && myDot.id === relevantCast.sender_dot_id;
+    const viewerIsParticipant = viewerIsReceiver || viewerIsSender;
+
+    // Whose turn? Receiver answers first; alternates after that.
+    let isMyTurn = false;
+    if (viewerIsParticipant && !isFull) {
+      if (turns.length === 0) {
+        isMyTurn = viewerIsReceiver;
+      } else {
+        const lastSpeaker = turns[turns.length - 1].speaker_id;
+        isMyTurn = lastSpeaker !== PLANTER_ID;
+      }
     }
-    wrap.appendChild(section);
-    return section;
-  }
 
-  // ── CASE B: I'm viewing the dot I cast. ────────────────────────
-  if (myCast && myCast.receiver_dot_id === msg.id) {
-    const section = makeSection();
-    const q = document.createElement("div");
-    q.className = "flare-popup-q";
-    q.textContent = optimistic(myCast.question);
-    section.appendChild(q);
-    replaceWhenReady(q, myCast.question);
+    // Render the back-and-forth thread, oldest first, in a fixed-
+    // height scrolling wrapper (same pattern as flares).
+    if (turns.length > 0) {
+      section.appendChild(Object.assign(document.createElement("div"),
+        { className: "flare-popup-divider" }));
+      const wrapEl = document.createElement("div");
+      wrapEl.className = "flare-popup-response-list-wrap";
+      const listEl = document.createElement("div");
+      listEl.className = "flare-popup-response-list";
+      for (const t of turns) {
+        const turnEl = document.createElement("div");
+        turnEl.className = "flare-popup-response";
+        turnEl.textContent = optimistic(t.text);
+        listEl.appendChild(turnEl);
+        replaceWhenReady(turnEl, t.text);
+      }
+      wrapEl.appendChild(listEl);
+      section.appendChild(wrapEl);
 
-    if (myCast.answer) {
-      const a = document.createElement("div");
-      a.className = "flare-popup-response";
-      a.style.marginTop = "12px";
-      a.textContent = optimistic(myCast.answer);
-      section.appendChild(a);
-      replaceWhenReady(a, myCast.answer);
-    } else {
+      const updateFade = () => {
+        const left = listEl.scrollHeight - listEl.clientHeight - listEl.scrollTop;
+        wrapEl.classList.toggle("show-fade", left > 4);
+      };
+      listEl.addEventListener("scroll", updateFade);
+      requestAnimationFrame(updateFade);
+      setTimeout(updateFade, 350);
+    }
+
+    // Respond UI / locked state.
+    if (isFull) {
       const locked = document.createElement("div");
       locked.className = "flare-popup-locked";
-      locked.textContent = "awaiting reply to cast";
+      locked.textContent = "this conversation is closed.";
+      section.appendChild(locked);
+    } else if (isMyTurn) {
+      section.appendChild(Object.assign(document.createElement("div"),
+        { className: "flare-popup-divider" }));
+      const replyMax = Math.min(50, remaining);
+      const { area } = makeRespondArea("say something back...", "send",
+        replyMax, (text) => addCastTurn(relevantCast.id, text));
+      section.appendChild(area);
+      const budget = document.createElement("div");
+      budget.className = "flare-popup-budget";
+      budget.textContent = `${remaining} of 500 left in this thread`;
+      section.appendChild(budget);
+    } else if (viewerIsParticipant) {
+      // Other party's turn.
+      const locked = document.createElement("div");
+      locked.className = "flare-popup-locked";
+      locked.textContent = "awaiting their reply…";
       section.appendChild(locked);
     }
+    // Third-party viewers see the thread read-only — no input UI.
+
     wrap.appendChild(section);
     return section;
   }
 
-  // ── CASE C: viewing someone else's dot, viewer has their own ──
-  // ── dot, and they've tapped the active toolbar #castBtn so the ──
-  // ── cast form should appear inline. Otherwise the popup shows  ──
-  // ── nothing extra — entry point lives in the toolbar.          ──
+  // ── CASE C: viewer wants to send a NEW cast (no cast exists for
+  // this dot yet, viewer has their own dot, and they tapped the
+  // active #castBtn). Otherwise the popup shows nothing extra.
   if (!isMine && myDot && castFormOpenForId === msg.id) {
     const section = makeSection();
     const { area, focus } = makeRespondArea("ask one question...", "send",
-      (text) => sendCast(myDot.id, msg.id, text));
+      CAST_QUESTION_MAX, (text) => sendCast(myDot.id, msg.id, text));
     section.appendChild(area);
     wrap.appendChild(section);
     focus();
     return section;
   }
 
-  // ── CASE D: viewing a dot that received a cast, viewer is      ──
-  // ── neither the sender nor the receiver (the common case for   ──
-  // ── any third-party visitor — also covers the same person      ──
-  // ── viewing from a different device, since identity is local-  ──
-  // ── storage-bound and theres no cross-device auth). Render     ──
-  // ── the Q&A read-only so the marching-ants line on the map     ──
-  // ── isnt visually orphaned from its content. Mirrors how flare ──
-  // ── Q&A is publicly visible to anyone viewing the flare popup. ──
-  if (incoming) {
-    const section = makeSection();
-    const q = document.createElement("div");
-    q.className = "flare-popup-q";
-    q.textContent = optimistic(incoming.question);
-    section.appendChild(q);
-    replaceWhenReady(q, incoming.question);
-    if (incoming.answer) {
-      const a = document.createElement("div");
-      a.className = "flare-popup-response";
-      a.style.marginTop = "12px";
-      a.textContent = optimistic(incoming.answer);
-      section.appendChild(a);
-      replaceWhenReady(a, incoming.answer);
-    } else {
-      const locked = document.createElement("div");
-      locked.className = "flare-popup-locked";
-      locked.textContent = "awaiting reply to cast";
-      section.appendChild(locked);
-    }
-    wrap.appendChild(section);
-    return section;
-  }
-
-  // CASE E: nothing relevant.
+  // Nothing relevant.
   return null;
 }
 
@@ -8423,6 +8489,7 @@ function buildCastSection(msg, wrap) {
   // (reconcileCastLines retries on later poll ticks).
   if (IS_CAST_ENABLED) {
     await loadCasts();
+    await loadCastTurns();
     reconcileCastLines();
   }
 
@@ -8604,20 +8671,25 @@ function buildCastSection(msg, wrap) {
           .select("hour_key, dot_id, mood, claimed_at")
           .eq("hour_key", hk).maybeSingle()
       ];
-      // Casts are polled un-incrementally (full today's window) because
-      // they can be UPDATED in place (when answered), and a created_at
-      // cursor would miss those updates. The table is small enough
-      // (max ~one cast per active user per day) that the extra bytes
-      // are negligible. Only fires when the ?cast=1 flag is on.
+      // Casts: now never UPDATE'd (answer column is dead, all back-and-
+      // forth lives in cast_turns). Still polling the full today's
+      // window for now — table is tiny (~one cast per active user per
+      // day) so the extra bytes are negligible.
+      // Cast turns: incremental poll — only rows newer than the cursor.
       if (IS_CAST_ENABLED) {
         queries.push(
           sb.from("casts")
-            .select("id, sender_dot_id, receiver_dot_id, question, answer, created_at")
+            .select("id, sender_dot_id, receiver_dot_id, question, created_at")
             .gte("created_at", todayMidnightUTC())
+        );
+        queries.push(
+          sb.from("cast_turns")
+            .select("id, cast_id, speaker_id, text, created_at")
+            .gt("created_at", since).order("created_at", { ascending: true })
         );
       }
       const results = await Promise.all(queries);
-      const [m, f, r, c, castResult] = results;
+      const [m, f, r, c, castResult, castTurnsResult] = results;
       let touched = false;
       let maxSeen = since;
       if (Array.isArray(m.data)) {
@@ -8645,6 +8717,20 @@ function buildCastSection(msg, wrap) {
       if (IS_CAST_ENABLED && castResult && Array.isArray(castResult.data)) {
         for (const row of castResult.data) applyCastRow(row);
         reconcileCastLines();
+      }
+      // Cast turns: each new turn refreshes whichever popup is open
+      // for either side of that cast (sender's dot or receiver's dot).
+      if (IS_CAST_ENABLED && castTurnsResult && Array.isArray(castTurnsResult.data)) {
+        for (const row of castTurnsResult.data) {
+          if (row.created_at && row.created_at > maxSeen) maxSeen = row.created_at;
+          if (applyCastTurnRow(row)) {
+            const cast = casts.find(cc => cc.id === row.cast_id);
+            if (cast) {
+              refreshOpenDotPopup(cast.sender_dot_id);
+              refreshOpenDotPopup(cast.receiver_dot_id);
+            }
+          }
+        }
       }
       // Advance the cursor unconditionally — even when every returned row
       // was a duplicate (e.g., the very first poll after boot, when the
