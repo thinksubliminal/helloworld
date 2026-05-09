@@ -183,10 +183,13 @@ GRANT EXECUTE ON FUNCTION increment_message_view_count(uuid) TO anon, authentica
   in `2032cd4 Wire boot path to Cloudflare Worker for cached loadAll`.
 
 ## Flares
-A second interaction type: a question/wish anchored to a continent. Only one
-person from that continent can answer; first responder wins. Flares unlock
-once the user has dropped a dot today. One flare per day per device. Reset at
-midnight UTC.
+A second interaction type: a question/wish anchored to a continent. Visitors
+on the same continent can each leave one short reply, building a multi-voice
+thread that's bounded by a shared 500-character budget across all replies.
+Once the budget is spent the thread locks for the day. The flare's question
+itself is capped at 100 chars and is **not** counted against the 500. Each
+individual reply is capped at 50 chars. Flares unlock once the user has
+dropped a dot today. One flare per day per device. Reset at midnight UTC.
 
 ### Tables
 - `flares` (id, text, lat, lng, loc, continent, planter_id, created_at). The
@@ -200,18 +203,32 @@ midnight UTC.
   `hw-planter-id` in localStorage. NOT regenerated daily; rotatable by
   clearing storage. Server has no auth, so identity is honor-system.
 
-### RLS — current state (2026-05-02)
+### RLS / constraints — current state (2026-05-09)
 - `flares`: SELECT public, INSERT public (`with_check = true`).
 - `flare_responses`:
   - SELECT public.
   - INSERT requires `length(trim(responder_id)) > 0 AND length(trim(text)) > 0`
     — rejects empty / whitespace-only rows.
-  - **`UNIQUE (flare_id)` constraint** at the table level enforces
-    first-responder-wins atomically. Two concurrent inserts for the same
-    `flare_id` will produce exactly one success; the loser receives a
-    Postgres `23505 unique_violation`. The client surfaces this as
-    "someone answered first." This is the DB-level guarantee — there is
-    no UPDATE policy involved, because nothing is updated.
+  - `CHECK (char_length(text) BETWEEN 1 AND 50)` enforces the per-reply
+    50-char cap at the DB level. The UI matches it.
+  - `UNIQUE (flare_id, responder_id)` enforces one reply per device per
+    flare. A second attempt from the same device yields Postgres
+    `23505 unique_violation`, surfaced as "you've already replied to
+    this flare."
+- All inserts go through the `insert_flare_response(p_flare_id,
+  p_responder_id, p_text)` RPC, **not** a direct INSERT. The function:
+  1. Validates the reply is 1–50 chars (raises `P0001
+     reply_invalid_length` on violation).
+  2. Locks the parent `flares` row with `SELECT ... FOR UPDATE` so two
+     concurrent calls serialize.
+  3. Sums `char_length(text)` across existing replies for the flare.
+     If `existing + new > 500`, raises `P0002 thread_full` (surfaced
+     as "this conversation is closed.").
+  4. Otherwise inserts and returns the row.
+- The 500-char shared budget is **replies-only**. The flare's question
+  is separate. Atomic enforcement at the DB level is essential — without
+  the row lock, two simultaneous replies could both think they have room
+  and overflow the budget.
 
 ### Known security gap (PR-2, deferred)
 - Continent verification is **client-side only**. Nothing in RLS verifies
@@ -227,12 +244,6 @@ midnight UTC.
 - Flares and responses are picked up by the same 30-second polling loop
   that handles dots — there are no realtime subscriptions on these tables
   either. New flares and incoming responses appear within 30s.
-
-### Visual identity
-- Triangle markers (vs dots), amber `#ff9e3d` color.
-- Unanswered: rapid pulse animation (urgent beacon).
-- Answered: dimmed, no animation, slightly smaller (settled).
-- Mine: white stroke around the triangle (parallel to `.dot.mine`).
 
 ### Migration SQL (historical reference; current schema reflects all of these)
 ```sql
@@ -270,14 +281,21 @@ create policy "anyone can insert flare responses" on flare_responses
     length(trim(responder_id)) > 0
     and length(trim(text)) > 0
   );
-alter table flare_responses
-  add constraint flare_responses_one_per_flare unique (flare_id);
+-- 1:1 lock (2026-05-08, superseded the next day):
+-- alter table flare_responses
+--   add constraint flare_responses_one_per_flare unique (flare_id);
+
+-- Multi-voice thread migration (2026-05-09, current):
+-- Drops the 1:1 lock, adds one-per-device, tightens reply length to 50,
+-- adds the atomic budget-enforcing RPC. Full SQL in `flares_thread.sql`
+-- in the repo root. Run via the Supabase SQL editor.
 ```
 
 ### Visual identity
 - Triangle markers (vs dots), amber `#ff9e3d` color.
-- Unanswered: rapid pulse animation (urgent beacon).
-- Answered: dimmed, no animation, slightly smaller (settled).
+- Not full: rapid pulse animation (urgent beacon — still inviting voices).
+- Full (500-char budget exhausted): dimmed, no animation, slightly smaller
+  (settled). The canvas reads `answered = usedChars >= 500` to drive this.
 - Mine: white stroke around the triangle (parallel to `.dot.mine`).
 
 ### Dev

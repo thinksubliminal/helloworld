@@ -2124,6 +2124,46 @@
     color: rgba(255, 255, 255, 0.4);
     margin-bottom: 10px;
   }
+  /* Wrapper hosts the bottom-fade ::after; the inner list scrolls. Keeping
+     the fade on the non-scrolling parent dodges browser quirks where
+     absolutely-positioned children inside `overflow: auto` drift with
+     scroll. Fixed max-height keeps the popup from growing as the thread
+     fills up — a long thread becomes scrollable in place. */
+  .flare-popup-response-list-wrap {
+    position: relative;
+  }
+  .flare-popup-response-list-wrap::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 26px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.42));
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .flare-popup-response-list-wrap.show-fade::after { opacity: 1; }
+  .flare-popup-response-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 220px;
+    overflow-y: auto;
+    /* A bit of room at the bottom so the last reply isn't visually
+       swallowed by the fade. */
+    padding-bottom: 6px;
+  }
+  /* Small thread-budget readout under the respond UI. Quiet — informational
+     rather than urgent. Updates dynamically through dynamic maxlength on
+     the textarea (you literally can't type past the room's remaining
+     budget). */
+  .flare-popup-budget {
+    margin-top: 8px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    text-align: right;
+    letter-spacing: 0.04em;
+  }
   .flare-popup-response {
     color: rgba(255, 255, 255, 0.88);
     font-size: 13px;
@@ -4449,7 +4489,13 @@ const FlareCanvas = L.Layer.extend({
 
   setFlare: function (flare) {
     if (!flare || flare.lat == null || flare.lng == null) return;
-    const answered = (flare.responses || []).length > 0;
+    // "answered" now means "the thread is full" (500-char shared budget
+    // exhausted). A flare with some replies but room for more keeps
+    // pulsing — it's still inviting voices.
+    const usedChars = (flare.responses || []).reduce(
+      (sum, r) => sum + ((r && r.text) ? r.text.length : 0), 0
+    );
+    const answered = usedChars >= 500;
     const existing = this._flares.get(flare.id);
     if (existing) {
       existing.lat = flare.lat;
@@ -6954,11 +7000,17 @@ function buildFlarePopup(flare) {
   const myContinent = myCurrentContinent();
   const sameContinent = myContinent && myContinent === flare.continent;
   const responses = flare.responses || [];
-  const hasResponse = responses.length > 0;
+  const usedChars = responses.reduce(
+    (sum, r) => sum + ((r && r.text) ? r.text.length : 0), 0
+  );
+  const remaining = Math.max(0, 500 - usedChars);
+  const isFull = remaining <= 0;
+  const alreadyReplied = responses.some(r => r.responder_id === PLANTER_ID);
   const isMine = flare.planter_id === PLANTER_ID;
-  // First-responder-wins: only continent neighbors can answer, only one of
-  // them ever does, and the planter can't answer their own flare.
-  const canRespond = sameContinent && !hasResponse && !isMine;
+  // Continental multi-voice thread: same-continent visitors can reply, one
+  // reply per device, threads fills until 500 chars total are spent.
+  const canRespond = sameContinent && !isFull && !alreadyReplied && !isMine;
+  const replyMax = Math.min(50, remaining);
 
   // Translation state for this build. We paint cached translations (or the
   // original) on first render, then async-replace each text element when
@@ -6981,12 +7033,17 @@ function buildFlarePopup(flare) {
       `<span>${isMine ? "your flare" : "from " + escapeHtml(flare.planter_loc || flare.continent || "")}</span>` +
     `</div>`;
 
-  // The single response, if it exists. First-responder-wins, locked.
-  if (hasResponse) {
+  // The thread — every reply, oldest first. Wrapped in a fixed-height
+  // scroller so the popup itself doesn't grow with the conversation.
+  if (responses.length > 0) {
     html +=
       `<div class="flare-popup-divider"></div>` +
-      `<div class="flare-popup-response-label">response</div>` +
-      `<div class="flare-popup-response">${escapeHtml(optimistic(responses[0].text))}</div>`;
+      `<div class="flare-popup-response-list-wrap">` +
+        `<div class="flare-popup-response-list">`;
+    for (const r of responses) {
+      html += `<div class="flare-popup-response">${escapeHtml(optimistic(r.text))}</div>`;
+    }
+    html += `</div></div>`;
   }
 
   // Respond UI / locked-state messaging.
@@ -6994,28 +7051,47 @@ function buildFlarePopup(flare) {
     html +=
       `<div class="flare-popup-divider"></div>` +
       `<div class="flare-popup-respond-area">` +
-        `<textarea data-flare-respond maxlength="100" placeholder="say something back..."></textarea>` +
+        `<textarea data-flare-respond maxlength="${replyMax}" placeholder="say something back..."></textarea>` +
         `<div class="flare-popup-respond-actions">` +
-          `<span class="flare-popup-counter" data-flare-counter>100</span>` +
+          `<span class="flare-popup-counter" data-flare-counter>${replyMax}</span>` +
           `<button class="flare-btn-primary" data-flare-send disabled>respond</button>` +
         `</div>` +
         `<div class="flare-popup-error" data-flare-error hidden></div>` +
-      `</div>`;
-  } else if (!hasResponse && isMine) {
-    html += `<div class="flare-popup-locked">waiting for a reply from ${escapeHtml(flare.continent || "")}…</div>`;
-  } else if (!hasResponse && !sameContinent) {
+      `</div>` +
+      `<div class="flare-popup-budget">${remaining} of 500 left in this thread</div>`;
+  } else if (isFull) {
+    html += `<div class="flare-popup-locked">this conversation is closed.</div>`;
+  } else if (alreadyReplied) {
+    html += `<div class="flare-popup-locked">you've said your piece ✓</div>`;
+  } else if (isMine && responses.length === 0) {
+    html += `<div class="flare-popup-locked">waiting for replies from ${escapeHtml(flare.continent || "")}…</div>`;
+  } else if (!sameContinent) {
     html += `<div class="flare-popup-locked">only people in ${escapeHtml(flare.continent || "")} can answer.</div>`;
-  } else if (hasResponse && sameContinent && !isMine) {
-    html += `<div class="flare-popup-locked">someone already answered.</div>`;
   }
 
   wrap.innerHTML = html;
 
-  // Async-replace translation for the question + the single response. Mirrors
-  // the dot popup pattern — original (or cached) painted on first render,
-  // real translation swaps in when the fetch resolves. No equality
-  // short-circuit: any non-empty result wins. If the fetch fails, original
-  // stays.
+  // Bottom-fade visibility on the response list. Same trick used elsewhere
+  // (heard panel, language picker): the fade lives on a non-scrolling
+  // parent so it doesn't drift with scrollTop. JS toggles `.show-fade`
+  // when the list overflows AND the user hasn't reached the bottom.
+  const respWrap = wrap.querySelector(".flare-popup-response-list-wrap");
+  const respList = wrap.querySelector(".flare-popup-response-list");
+  if (respWrap && respList) {
+    const updateFade = () => {
+      const remaining = respList.scrollHeight - respList.clientHeight - respList.scrollTop;
+      respWrap.classList.toggle("show-fade", remaining > 4);
+    };
+    respList.addEventListener("scroll", updateFade);
+    requestAnimationFrame(updateFade);
+    // Re-check after async translation can grow individual replies.
+    setTimeout(updateFade, 350);
+  }
+
+  // Async-replace translation for the question + every reply in the
+  // thread. Mirrors the dot popup pattern — original (or cached) painted
+  // on first render, real translation swaps in when the fetch resolves.
+  // If the fetch fails, original stays.
   if (wantTranslate) {
     const replaceWhenReady = (el, text) => {
       if (!el || !text) return;
@@ -7029,12 +7105,13 @@ function buildFlarePopup(flare) {
       });
     };
     replaceWhenReady(wrap.querySelector(".flare-popup-q"), flare.text);
-    if (hasResponse) {
-      replaceWhenReady(wrap.querySelector(".flare-popup-response"), responses[0].text);
-    }
+    const respEls = wrap.querySelectorAll(".flare-popup-response");
+    responses.forEach((r, i) => replaceWhenReady(respEls[i], r.text));
   }
 
-  // Wire up the respond UI if it's present.
+  // Wire up the respond UI if it's present. The textarea's maxlength is
+  // already capped to min(50, remaining) at render time; the counter and
+  // submit gate use the same replyMax value.
   const ta = wrap.querySelector("[data-flare-respond]");
   const sendBtn = wrap.querySelector("[data-flare-send]");
   const counter = wrap.querySelector("[data-flare-counter]");
@@ -7042,15 +7119,15 @@ function buildFlarePopup(flare) {
   if (ta && sendBtn && counter) {
     const sync = () => {
       const len = ta.value.length;
-      counter.textContent = String(100 - len);
-      counter.classList.toggle("over", len > 100);
-      sendBtn.disabled = !(len > 0 && len <= 100);
+      counter.textContent = String(replyMax - len);
+      counter.classList.toggle("over", len > replyMax);
+      sendBtn.disabled = !(len > 0 && len <= replyMax);
       if (errEl && !errEl.hidden) { errEl.hidden = true; errEl.textContent = ""; }
     };
     ta.addEventListener("input", sync);
     sendBtn.addEventListener("click", async () => {
       const text = ta.value.trim();
-      if (!text || text.length > 100) return;
+      if (!text || text.length > replyMax) return;
       sendBtn.disabled = true;
       const ok = await respondToFlare(flare.id, text, errEl);
       if (!ok) sendBtn.disabled = false;
@@ -7060,11 +7137,14 @@ function buildFlarePopup(flare) {
   return wrap;
 }
 
-// First-responder-wins model. The DB enforces one response per flare via
-// `UNIQUE (flare_id)` on `flare_responses`. Two concurrent inserts produce
-// exactly one success; the loser receives Postgres `23505 unique_violation`
-// which we surface as "someone answered first." Continent gating is still
-// client-side (the respond UI is only rendered when sameContinent is true).
+// Continental multi-voice thread, 500-char shared budget, 50-char per
+// reply, one reply per device per flare. The DB enforces all of this
+// atomically via the `insert_flare_response` PL/pgSQL function:
+//   - P0001 reply_invalid_length → reply outside 1..50 chars
+//   - P0002 thread_full          → would exceed the 500-char budget
+//   - 23505 unique_violation     → already replied from this device
+// Continent gating is enforced client-side (respond UI only rendered when
+// sameContinent is true).
 async function respondToFlare(flareId, text, errEl) {
   // Hate-symbol + hate-phrase block. Mirrors the dot/flare composer gate;
   // the slur sanitizer below still redacts single-word slurs separately.
@@ -7078,17 +7158,25 @@ async function respondToFlare(flareId, text, errEl) {
   }
   try {
     const { data, error } = await sb
-      .from("flare_responses")
-      .insert({ flare_id: flareId, responder_id: PLANTER_ID, text: sanitizeProfanity(text) })
-      .select()
+      .rpc("insert_flare_response", {
+        p_flare_id: flareId,
+        p_responder_id: PLANTER_ID,
+        p_text: sanitizeProfanity(text)
+      })
       .single();
 
     if (error) {
       if (errEl) {
         errEl.hidden = false;
-        errEl.textContent = error.code === "23505"
-          ? "someone answered first."
-          : "couldn't send. check your connection.";
+        if (error.code === "P0002" || /thread_full/i.test(error.message || "")) {
+          errEl.textContent = "this conversation is closed.";
+        } else if (error.code === "23505") {
+          errEl.textContent = "you've already replied to this flare.";
+        } else if (error.code === "P0001" || /reply_invalid_length/i.test(error.message || "")) {
+          errEl.textContent = "reply must be 1–50 characters.";
+        } else {
+          errEl.textContent = "couldn't send. check your connection.";
+        }
       }
       return false;
     }
@@ -7101,10 +7189,11 @@ async function respondToFlare(flareId, text, errEl) {
     }
 
     // Local mirror so the popup updates without waiting for the next poll.
-    // Replace, don't push — the locked model allows exactly one response.
+    // Push — multi-voice thread accumulates responses until full.
     const f = flares.find(f => f.id === flareId);
     if (f) {
-      f.responses = [data];
+      if (!f.responses) f.responses = [];
+      if (!f.responses.some(r => r.id === data.id)) f.responses.push(data);
       refreshFlareMarkerStyle(f);
     }
     return true;
