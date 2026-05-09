@@ -6630,9 +6630,12 @@ if (IS_DEV_MODE) {
   }
 
   function buildBody() {
-    return buildMoodStats() +
-           `<div class="globe-section-divider"></div>` +
-           buildContinentSections();
+    // Mood breakdown only for now — the continent-grouped message
+    // list was redundant with the Heard Around the World panel and
+    // didn't earn its real estate. `buildContinentSections` and
+    // `CONTINENT_ORDER` are kept in place for easy reactivation if
+    // we want it back later.
+    return buildMoodStats();
   }
 
   function open() {
