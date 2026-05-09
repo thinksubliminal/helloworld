@@ -2699,6 +2699,7 @@
       bottom: calc(env(safe-area-inset-bottom, 0px) + 14px) !important;
     }
   }
+
 </style>
 </head>
 <body>
@@ -9380,6 +9381,324 @@ function buildCastSection(msg, wrap) {
       console.log("%c[dev] resetMyTile: localStorage cleared, ready to draw a fresh tile", "color:#5BBED4");
     };
   }
+})();
+
+// ═════════════════════════════════════════════════════════════════════════
+// Bird flock (canvas overlay, top-down silhouettes)
+// ═════════════════════════════════════════════════════════════════════════
+// Atmospheric layer: birds cross the viewport periodically as a small
+// "the world is alive" cue. Drawn fresh every frame onto a single canvas
+// overlay (z-index 450, pointer-events: none) so map interactions are
+// never blocked.
+//
+// Bird shape — top-down view:
+//   - Small filled ellipse for the body (long-axis aligned with motion).
+//   - Two wings, each a closed quadratic-bezier path that's wide at the
+//     base (along the body) and tapers to a single wingtip point.
+//   - Flap: wingtip x-position (forward/back along motion axis) is a
+//     sine of (time / flapPeriod + flapPhase). Per-bird period and
+//     phase keep the flock from beating in unison.
+//   - Banking: when a bird's heading is wobbling (turning), the inside
+//     wing scales down as if foreshortened — reads as a tilt into the
+//     turn rather than a flat sliding cutout.
+//
+// Flock variety (each spawn rolls one):
+//   - 15% solo: one bird crossing alone (a lone wanderer)
+//   - 10% pair: two birds together
+//   - 70% normal: 8–15 birds, scatter or V-formation (20% chance V)
+//   - 5%  large migration: 20–30 birds (35% chance V)
+//
+// Per-bird character:
+//   - Random opacity 0.45–0.80 — suggests altitude depth without 3D math.
+//   - Slow flap (~1.2–1.7s/cycle), small sweep amplitude — gentle pulse,
+//     not a beat.
+//   - Speed bobs ±15% on a 5–8s cycle (riding thermals).
+//   - Speed eases in over the first 2s of life so the bird doesn't pop
+//     onto screen at full velocity.
+//   - 2–3 wanderers per scatter flock get a larger heading wobble and
+//     drift away before sine-curving back.
+//
+// Direction: 75% horizontal (LR/RL), 25% vertical (TB/BT). Each path
+// gets a ±20° random tilt so flights aren't perfectly axis-aligned.
+//
+// Attention etiquette: pause new flock spawns whenever a Leaflet popup
+// is open or the drawing realm overlay is up — don't fly birds over
+// content the user is reading.
+//
+// Performance: single canvas, single rAF loop. DPR-scaled backing buffer
+// for crisp lines on Retina. dt is clamped so a backgrounded tab returning
+// to focus doesn't teleport birds across the screen.
+// ─────────────────────────────────────────────────────────────────────────
+(function birdFlocks() {
+  const canvas = document.createElement("canvas");
+  canvas.id = "birdCanvas";
+  canvas.style.cssText =
+    "position:fixed;left:0;top:0;width:100%;height:100%;" +
+    "pointer-events:none;z-index:450;";
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+
+  function resize() {
+    // Cap DPR at 1.5 — birds are soft 5px silhouettes, they don't need
+    // 2x retina sharpness, and the saving is huge on big monitors. A 5K
+    // Studio Display at 2x = 59 megapixel backing buffer per frame; at
+    // 1.5x it's 33MP. Half the per-frame pixel work, no visible loss.
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width  = Math.max(1, Math.floor(window.innerWidth  * dpr));
+    canvas.height = Math.max(1, Math.floor(window.innerHeight * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener("resize", resize);
+
+  const birds = [];
+
+  // Don't spawn new flocks while the user is reading a popup or has the
+  // realm overlay open. The flock currently in flight finishes its
+  // crossing — only the next spawn is gated.
+  function userAttentionElsewhere() {
+    if (document.hidden) return true;
+    if (document.querySelector(".leaflet-popup")) return true;
+    const realm = document.getElementById("realmOverlay");
+    if (realm && realm.classList.contains("open")) return true;
+    return false;
+  }
+
+  function spawnFlock() {
+    if (userAttentionElsewhere()) return;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+
+    // ── Flock size profile + formation ─────────────────────────────
+    const r = Math.random();
+    let flockSize;
+    let formation; // "solo" | "pair" | "scatter" | "v"
+    if (r < 0.15) {
+      flockSize = 1;
+      formation = "solo";
+    } else if (r < 0.25) {
+      flockSize = 2;
+      formation = "pair";
+    } else if (r < 0.95) {
+      flockSize = 8 + Math.floor(Math.random() * 8); // 8–15
+      formation = Math.random() < 0.20 ? "v" : "scatter";
+    } else {
+      flockSize = 20 + Math.floor(Math.random() * 11); // 20–30
+      formation = Math.random() < 0.35 ? "v" : "scatter";
+    }
+
+    // ── Direction (weighted) + ±20° tilt ───────────────────────────
+    let direction;
+    if (Math.random() < 0.75) {
+      direction = Math.random() < 0.5 ? "LR" : "RL";
+    } else {
+      direction = Math.random() < 0.5 ? "TB" : "BT";
+    }
+    // Speed scales with viewport size so the time-to-cross stays
+    // consistent on tiny laptops vs. ultrawide / 5K monitors. Without
+    // this, on a 3440px wide window each crossing took ~3 minutes.
+    // Reference width 1280px; scale factor capped at 2.5× so birds
+    // don't go zooming on a huge display.
+    const sizeFactor = Math.max(1,
+      Math.min(2.5, (direction === "LR" || direction === "RL"
+        ? W / 1280
+        : H / 800)));
+    const baseSpeed = (18 + Math.random() * 10) * sizeFactor;
+    let heading, startX, startY;
+    const PAD = 100;
+    if (direction === "LR") {
+      heading = 0;
+      startX = -PAD; startY = PAD + Math.random() * Math.max(1, H - PAD * 2);
+    } else if (direction === "RL") {
+      heading = Math.PI;
+      startX = W + PAD; startY = PAD + Math.random() * Math.max(1, H - PAD * 2);
+    } else if (direction === "TB") {
+      heading = Math.PI / 2;
+      startX = PAD + Math.random() * Math.max(1, W - PAD * 2); startY = -PAD;
+    } else {
+      heading = -Math.PI / 2;
+      startX = PAD + Math.random() * Math.max(1, W - PAD * 2); startY = H + PAD;
+    }
+    const TILT_RAD = (20 * Math.PI) / 180;
+    heading += (Math.random() - 0.5) * 2 * TILT_RAD;
+
+    // ── Wanderer indices (scatter formations only) ─────────────────
+    const wanderSet = new Set();
+    if (formation === "scatter" && flockSize >= 4) {
+      const wanderCount = 2 + Math.floor(Math.random() * 2);
+      while (wanderSet.size < wanderCount) {
+        wanderSet.add(Math.floor(Math.random() * flockSize));
+      }
+    }
+
+    // ── Layout params ──────────────────────────────────────────────
+    const SCATTER_ALONG = 280;
+    const SCATTER_PERP = 140;
+    const V_ALONG_STEP = 32;
+    const V_PERP_STEP  = 22;
+    const now = performance.now();
+
+    for (let i = 0; i < flockSize; i++) {
+      // alongOffset: negative = behind leader (relative to motion axis)
+      // perpOffset:  side displacement (perpendicular to motion axis)
+      let alongOffset, perpOffset;
+      if (formation === "solo") {
+        alongOffset = 0; perpOffset = 0;
+      } else if (formation === "pair") {
+        if (i === 0) { alongOffset = 0; perpOffset = 0; }
+        else {
+          alongOffset = -25 + (Math.random() - 0.5) * 20;
+          perpOffset  = 30 * (Math.random() < 0.5 ? -1 : 1);
+        }
+      } else if (formation === "v") {
+        if (i === 0) { alongOffset = 0; perpOffset = 0; }
+        else {
+          // Birds 1,2 = first row; 3,4 = second row; alternating sides.
+          const row = Math.ceil(i / 2);
+          const sideSign = (i % 2 === 1) ? -1 : 1;
+          // Slight per-bird randomization so the V isn't perfectly geometric.
+          alongOffset = -row * V_ALONG_STEP * (0.95 + Math.random() * 0.1);
+          perpOffset  =  row * V_PERP_STEP  * sideSign * (0.95 + Math.random() * 0.1);
+        }
+      } else { // scatter
+        alongOffset = (Math.random() - 0.5) * SCATTER_ALONG;
+        perpOffset  = (Math.random() - 0.5) * SCATTER_PERP;
+      }
+      // Convert (along, perp) → (jitterX, jitterY) based on direction.
+      let jitterX, jitterY;
+      if (direction === "LR")      { jitterX =  alongOffset; jitterY = perpOffset; }
+      else if (direction === "RL") { jitterX = -alongOffset; jitterY = perpOffset; }
+      else if (direction === "TB") { jitterX = perpOffset;   jitterY =  alongOffset; }
+      else                         { jitterX = perpOffset;   jitterY = -alongOffset; }
+
+      // V-formation birds keep tighter speed so the shape holds.
+      const speedFactor = formation === "v"
+        ? 0.95 + Math.random() * 0.10
+        : 0.86 + Math.random() * 0.28;
+
+      birds.push({
+        x: startX + jitterX,
+        y: startY + jitterY,
+        baseHeading: heading,
+        speed: baseSpeed * speedFactor,
+        flapPeriod: 1200 + Math.random() * 500,
+        flapPhase:  Math.random() * Math.PI * 2,
+        bodyLen:    3.0 + Math.random() * 1.0,
+        bodyWidth:  1.2 + Math.random() * 0.4,
+        wingspan:   4.8 + Math.random() * 1.5,
+        sweepAmp:   1.6 + Math.random() * 0.7,
+        isWanderer: wanderSet.has(i),
+        wanderPhase: Math.random() * Math.PI * 2,
+        wanderPeriod: 7000 + Math.random() * 4000,
+        // Per-bird opacity creates a depth illusion — some birds read
+        // as higher altitude (faint), some as closer (more visible).
+        opacity: 0.45 + Math.random() * 0.35,
+        // Speed bob — gently rises and falls on a long cycle, like a
+        // bird riding a thermal updraft.
+        speedPhase:  Math.random() * Math.PI * 2,
+        speedPeriod: 5000 + Math.random() * 3000,
+        // Birth time for the entry-ramp ease — birds accelerate up to
+        // full speed over the first ~2s of life rather than popping in.
+        bornAt: now,
+      });
+    }
+  }
+
+  function drawWing(b, sweep, side, scale) {
+    // Banking foreshortens the inside wing — `scale` < 1 shortens the
+    // wingspan on that side, so the bird visually tilts into a turn.
+    const span = b.wingspan * scale;
+    const backX  = -b.bodyLen * 0.45;
+    const frontX = +b.bodyLen * 0.25;
+    const tipY = side * span;
+    const tipX = sweep;
+    ctx.beginPath();
+    ctx.moveTo(backX, 0);
+    ctx.quadraticCurveTo(
+      backX + (tipX - backX) * 0.4,
+      side * span * 0.75,
+      tipX, tipY
+    );
+    ctx.quadraticCurveTo(
+      frontX,
+      side * span * 0.35,
+      frontX, 0
+    );
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawBird(b, t) {
+    // Gradual heading wobble. Wanderers wobble more.
+    const wobble = Math.sin((t / b.wanderPeriod) * Math.PI * 2 + b.wanderPhase)
+                 * (b.isWanderer ? 0.30 : 0.05);
+    const heading = b.baseHeading + wobble;
+    b._lastHeading = heading;
+    const sweep = Math.sin((t / b.flapPeriod) * Math.PI * 2 + b.flapPhase)
+                * b.sweepAmp;
+
+    // Banking: when wobble is significant, shorten the inside wing
+    // (the wing on the side of the turn) by up to 30%.
+    const bankFactor  = Math.min(1, Math.abs(wobble) * 4);
+    const insideScale = 1 - bankFactor * 0.30;
+    const rightScale  = wobble > 0 ? insideScale : 1;
+    const leftScale   = wobble < 0 ? insideScale : 1;
+
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(heading);
+    // Per-bird opacity (depth illusion).
+    ctx.fillStyle = "rgba(255, 255, 255, " + b.opacity + ")";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, b.bodyLen / 2, b.bodyWidth / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    drawWing(b, sweep, +1, rightScale);
+    drawWing(b, sweep, -1, leftScale);
+    ctx.restore();
+  }
+
+  let lastT = 0;
+  function frame(t) {
+    const dt = lastT ? Math.min((t - lastT) / 1000, 0.05) : 0;
+    lastT = t;
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    if (birds.length) {
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      for (let i = birds.length - 1; i >= 0; i--) {
+        const b = birds[i];
+        drawBird(b, t);
+        // Speed bob (thermal) + entry ease.
+        const ageSec = (t - b.bornAt) / 1000;
+        const entryEase = Math.min(1, ageSec / 2);
+        const bob = 0.85 + Math.sin((t / b.speedPeriod) * Math.PI * 2 + b.speedPhase) * 0.15;
+        const speedNow = b.speed * bob * entryEase;
+        b.x += Math.cos(b._lastHeading) * speedNow * dt;
+        b.y += Math.sin(b._lastHeading) * speedNow * dt;
+        if (b.x < -180 || b.x > W + 180 || b.y < -180 || b.y > H + 180) {
+          birds.splice(i, 1);
+        }
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  function scheduleNext() {
+    const delay = 45000 + Math.random() * 30000; // 45–75s
+    setTimeout(() => {
+      // If user is reading a popup / in the realm, retry sooner so the
+      // next flock arrives shortly after they close it.
+      if (userAttentionElsewhere()) {
+        setTimeout(scheduleNext, 5000 + Math.random() * 5000);
+      } else {
+        spawnFlock();
+        scheduleNext();
+      }
+    }, delay);
+  }
+  setTimeout(() => { spawnFlock(); scheduleNext(); },
+             4000 + Math.random() * 6000);
 })();
 
 // ───────────── PWA: service worker registration ─────────────
