@@ -918,10 +918,9 @@
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   }
   #langPanel.open { display: block; }
-  /* Bottom-fade cue when the list overflows. Same trick as
-     .flare-popup-response-list-wrap — the fade lives on the non-scrolling
-     parent so it doesn't drift with scrollTop. JS toggles `.show-fade`
-     based on remaining-scroll. */
+  /* Bottom-fade cue when the list overflows. The fade lives on the
+     non-scrolling parent so it doesn't drift with scrollTop. JS toggles
+     `.show-fade` based on remaining-scroll. */
   #langPanel::after {
     content: "";
     position: absolute;
@@ -2124,36 +2123,6 @@
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.4);
     margin-bottom: 10px;
-  }
-  /* Wrapper hosts the bottom-fade ::after; the inner list is what actually
-     scrolls. Keeping the fade on a non-scrolling parent dodges browser
-     quirks where absolutely-positioned children inside `overflow: auto`
-     can drift with scroll. */
-  .flare-popup-response-list-wrap {
-    position: relative;
-  }
-  .flare-popup-response-list-wrap::after {
-    content: "";
-    position: absolute;
-    left: 0; right: 0; bottom: 0;
-    height: 26px;
-    pointer-events: none;
-    background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.42));
-    /* Hidden by default. JS toggles `.show-fade` only when the response list
-       actually overflows AND the user hasn't reached the bottom yet. */
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-  .flare-popup-response-list-wrap.show-fade::after { opacity: 1; }
-  .flare-popup-response-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    max-height: 60vh;
-    overflow-y: auto;
-    /* Reserve a bit of space at the bottom so the last response isn't
-       visually swallowed by the fade. */
-    padding-bottom: 6px;
   }
   .flare-popup-response {
     color: rgba(255, 255, 255, 0.88);
@@ -6985,9 +6954,11 @@ function buildFlarePopup(flare) {
   const myContinent = myCurrentContinent();
   const sameContinent = myContinent && myContinent === flare.continent;
   const responses = flare.responses || [];
-  const alreadyResponded = responses.some(r => r.responder_id === PLANTER_ID);
-  const canRespond = sameContinent && !alreadyResponded;
+  const hasResponse = responses.length > 0;
   const isMine = flare.planter_id === PLANTER_ID;
+  // First-responder-wins: only continent neighbors can answer, only one of
+  // them ever does, and the planter can't answer their own flare.
+  const canRespond = sameContinent && !hasResponse && !isMine;
 
   // Translation state for this build. We paint cached translations (or the
   // original) on first render, then async-replace each text element when
@@ -7010,25 +6981,15 @@ function buildFlarePopup(flare) {
       `<span>${isMine ? "your flare" : "from " + escapeHtml(flare.planter_loc || flare.continent || "")}</span>` +
     `</div>`;
 
-  // Existing responses (can coexist with the respond UI — multiple answers
-  // accumulate over the day). The list scrolls inside its wrapper when there
-  // are many or very long responses; the wrapper gets a subtle bottom fade
-  // to hint at more content below.
-  if (responses.length > 0) {
+  // The single response, if it exists. First-responder-wins, locked.
+  if (hasResponse) {
     html +=
       `<div class="flare-popup-divider"></div>` +
-      `<div class="flare-popup-response-label">${responses.length} ${responses.length === 1 ? "response" : "responses"}</div>` +
-      `<div class="flare-popup-response-list-wrap">` +
-        `<div class="flare-popup-response-list">`;
-    for (const r of responses) {
-      html += `<div class="flare-popup-response">${escapeHtml(optimistic(r.text))}</div>`;
-    }
-    html += `</div></div>`;
+      `<div class="flare-popup-response-label">response</div>` +
+      `<div class="flare-popup-response">${escapeHtml(optimistic(responses[0].text))}</div>`;
   }
 
-  // Respond UI shows whenever the viewer is in the target continent and hasn't
-  // already responded to this flare. No "first writer wins" lock — many people
-  // in the continent can each leave a reply.
+  // Respond UI / locked-state messaging.
   if (canRespond) {
     html +=
       `<div class="flare-popup-divider"></div>` +
@@ -7040,37 +7001,21 @@ function buildFlarePopup(flare) {
         `</div>` +
         `<div class="flare-popup-error" data-flare-error hidden></div>` +
       `</div>`;
-  } else if (responses.length === 0 && isMine) {
-    html += `<div class="flare-popup-locked">waiting for replies from ${escapeHtml(flare.continent || "")}…</div>`;
-  } else if (responses.length === 0 && !sameContinent) {
+  } else if (!hasResponse && isMine) {
+    html += `<div class="flare-popup-locked">waiting for a reply from ${escapeHtml(flare.continent || "")}…</div>`;
+  } else if (!hasResponse && !sameContinent) {
     html += `<div class="flare-popup-locked">only people in ${escapeHtml(flare.continent || "")} can answer.</div>`;
+  } else if (hasResponse && sameContinent && !isMine) {
+    html += `<div class="flare-popup-locked">someone already answered.</div>`;
   }
 
   wrap.innerHTML = html;
 
-  // Bottom-fade visibility — only show when the list actually overflows AND
-  // the user hasn't scrolled to the bottom yet. Re-checked on every scroll
-  // and once after layout settles (popup is appended to DOM after this
-  // function returns, so an rAF lets us read scrollHeight/clientHeight from
-  // the live element).
-  const respWrap = wrap.querySelector(".flare-popup-response-list-wrap");
-  const respList = wrap.querySelector(".flare-popup-response-list");
-  if (respWrap && respList) {
-    const updateFade = () => {
-      const remaining = respList.scrollHeight - respList.clientHeight - respList.scrollTop;
-      respWrap.classList.toggle("show-fade", remaining > 4);
-    };
-    respList.addEventListener("scroll", updateFade);
-    requestAnimationFrame(updateFade);
-    // One more check after a beat — covers the case where async translations
-    // grow a response and tip the list into overflow after first paint.
-    setTimeout(updateFade, 350);
-  }
-
-  // Async-replace translation for the question + each response. Mirrors the
-  // dot popup pattern — original (or cached) painted on first render, real
-  // translation swaps in when the fetch resolves. No equality short-circuit:
-  // any non-empty result wins. If the fetch fails, original stays.
+  // Async-replace translation for the question + the single response. Mirrors
+  // the dot popup pattern — original (or cached) painted on first render,
+  // real translation swaps in when the fetch resolves. No equality
+  // short-circuit: any non-empty result wins. If the fetch fails, original
+  // stays.
   if (wantTranslate) {
     const replaceWhenReady = (el, text) => {
       if (!el || !text) return;
@@ -7084,8 +7029,9 @@ function buildFlarePopup(flare) {
       });
     };
     replaceWhenReady(wrap.querySelector(".flare-popup-q"), flare.text);
-    const respEls = wrap.querySelectorAll(".flare-popup-response");
-    responses.forEach((r, i) => replaceWhenReady(respEls[i], r.text));
+    if (hasResponse) {
+      replaceWhenReady(wrap.querySelector(".flare-popup-response"), responses[0].text);
+    }
   }
 
   // Wire up the respond UI if it's present.
@@ -7114,11 +7060,11 @@ function buildFlarePopup(flare) {
   return wrap;
 }
 
-// Multi-response model — each respond click inserts a new row in
-// `flare_responses`. No "first writer wins" lock; many people in the target
-// continent can each leave a reply. Continent gating is enforced client-side
-// (the respond UI is only rendered when sameContinent is true) and the
-// duplicate-by-same-device check uses planter_id.
+// First-responder-wins model. The DB enforces one response per flare via
+// `UNIQUE (flare_id)` on `flare_responses`. Two concurrent inserts produce
+// exactly one success; the loser receives Postgres `23505 unique_violation`
+// which we surface as "someone answered first." Continent gating is still
+// client-side (the respond UI is only rendered when sameContinent is true).
 async function respondToFlare(flareId, text, errEl) {
   // Hate-symbol + hate-phrase block. Mirrors the dot/flare composer gate;
   // the slur sanitizer below still redacts single-word slurs separately.
@@ -7137,7 +7083,16 @@ async function respondToFlare(flareId, text, errEl) {
       .select()
       .single();
 
-    if (error || !data) {
+    if (error) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = error.code === "23505"
+          ? "someone answered first."
+          : "couldn't send. check your connection.";
+      }
+      return false;
+    }
+    if (!data) {
       if (errEl) {
         errEl.hidden = false;
         errEl.textContent = "couldn't send. check your connection.";
@@ -7145,11 +7100,11 @@ async function respondToFlare(flareId, text, errEl) {
       return false;
     }
 
-    // Local mirror so the popup updates without waiting for the realtime echo.
+    // Local mirror so the popup updates without waiting for the next poll.
+    // Replace, don't push — the locked model allows exactly one response.
     const f = flares.find(f => f.id === flareId);
     if (f) {
-      if (!f.responses) f.responses = [];
-      if (!f.responses.some(r => r.id === data.id)) f.responses.push(data);
+      f.responses = [data];
       refreshFlareMarkerStyle(f);
     }
     return true;
