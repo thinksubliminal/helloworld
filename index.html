@@ -659,7 +659,11 @@
     text-transform: uppercase;
     white-space: nowrap;
     text-align: center;
+    transition: color 1.5s ease;
   }
+  /* Final hour: ambient warm-amber shift. No animation, no size change —
+     just a quiet color cue that the day is ending. */
+  #resetTimer.final-hour { color: #ff9e3d; }
   /* Tight stack: countdown sits 5px above the label so they read as one
      grouped unit; the rest of the bottom-zone gap (18px) still sits between
      this cluster and the buttons below. */
@@ -3817,7 +3821,17 @@ const HATE_PHRASES = [
   // doubled form is a more deliberate signal so it lands here too as a
   // belt-and-suspenders guard against any future single-rune false-positive
   // softening.
-  /ᛋᛋ/u
+  /ᛋᛋ/u,
+  // Telegram solicitation. URLs (t.me/...) already caught by URL_RE; these
+  // patterns catch the text-only invites that slip past the link filter.
+  /\btelegram\b/iu,
+  /\bt\s*g\s*[:@]/iu,
+  /\bjoin\s+(?:my\s+)?(?:tg|telegram|channel)\b/iu,
+  // Adult / OnlyFans-style solicitation.
+  /\bonly\s*fans\b/iu,
+  /\bfansly\b/iu,
+  /\bdm\s+(?:me\s+)?for\s+(?:nudes|pics|leaks|fun)\b/iu,
+  /\bsexting\b/iu
 ];
 
 // Pre-build one Unicode-aware regex per slur entry, with optional trailing "s"
@@ -6537,6 +6551,7 @@ if (hasDroppedToday()) {
     else if (minutes > 0) text = `resets in ${minutes}m`;
     else text = "resetting soon";
     el.textContent = text;
+    el.classList.toggle("final-hour", hours === 0);
   }
   update();
   setInterval(update, 60000);
@@ -7067,7 +7082,7 @@ function buildFlarePopup(flare) {
   const isMine = flare.planter_id === PLANTER_ID;
   // Continental multi-voice thread: same-continent visitors can reply, one
   // reply per device, threads fills until 500 chars total are spent.
-  const canRespond = sameContinent && !isFull && !alreadyReplied && !isMine;
+  const canRespond = sameContinent && !isFull && !alreadyReplied && !isMine && hasDroppedToday();
   const replyMax = Math.min(50, remaining);
 
   // Translation state for this build. We paint cached translations (or the
@@ -7123,6 +7138,8 @@ function buildFlarePopup(flare) {
     html += `<div class="flare-popup-locked">you've said your piece ✓</div>`;
   } else if (isMine && responses.length === 0) {
     html += `<div class="flare-popup-locked">waiting for replies from ${escapeHtml(flare.continent || "")}…</div>`;
+  } else if (!isMine && !hasDroppedToday()) {
+    html += `<div class="flare-popup-locked">drop a dot first to respond.</div>`;
   } else if (!sameContinent) {
     html += `<div class="flare-popup-locked">only people in ${escapeHtml(flare.continent || "")} can answer.</div>`;
   }
