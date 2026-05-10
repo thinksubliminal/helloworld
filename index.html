@@ -1452,6 +1452,69 @@
   }
   .realm-draw-hint { margin-top: 18px; }
 
+  /* Lightbox kebab + dropdown. Mirrors the dot popup's .msg-actions
+     pattern (Blur toggles personal localStorage mute, Report fires a
+     row into tile_reports), positioned in the top-right of #realmView.
+     stopPropagation everywhere so kebab/menu clicks don't trigger the
+     tap-anywhere lightbox dismiss. */
+  .realm-view-actions {
+    position: absolute;
+    top: 24px; right: 24px;
+    width: 28px; height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(20, 30, 45, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 50%;
+    padding: 0;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.7);
+    transition: color 0.15s, background 0.15s;
+    z-index: 3;
+  }
+  .realm-view-actions:hover {
+    color: rgba(255, 255, 255, 0.95);
+    background: rgba(20, 30, 45, 0.85);
+  }
+  .realm-view-actions svg { width: 16px; height: 16px; display: block; }
+  .realm-view-menu {
+    position: absolute;
+    top: 58px; right: 24px;
+    background: rgba(20, 30, 45, 0.96);
+    -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 110px;
+    z-index: 4;
+    display: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+  .realm-view-menu.open { display: block; }
+  .realm-view-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    color: rgba(255, 255, 255, 0.85);
+    font: inherit;
+    font-size: 12px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .realm-view-menu button:hover { background: rgba(255, 255, 255, 0.06); }
+  .realm-view-menu button:disabled { opacity: 0.5; cursor: default; }
+  .realm-view-menu-status {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.85);
+    white-space: nowrap;
+  }
+  .realm-view-menu-status.err { color: #ff8585; }
+
   /* Draw mode — full-screen single-tile canvas + bottom toolbar.
      Hidden until the user taps their assigned tile in the mosaic.
      Transparent so the overlay's frosted background shows through;
@@ -2942,6 +3005,14 @@
     <canvas id="realmMosaicCanvas" width="1000" height="1000"></canvas>
   </div>
   <div id="realmView">
+    <button class="realm-view-actions" id="realmViewActions" type="button" aria-label="tile actions" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <circle cx="12" cy="5" r="2"/>
+        <circle cx="12" cy="12" r="2"/>
+        <circle cx="12" cy="19" r="2"/>
+      </svg>
+    </button>
+    <div class="realm-view-menu" id="realmViewMenu" role="menu"></div>
     <div class="realm-view-mood" id="realmViewMood"></div>
     <canvas id="realmViewCanvas" width="1000" height="1000"></canvas>
     <div class="realm-view-hint">tap to close</div>
@@ -4920,6 +4991,52 @@ async function reportMessage(msgId) {
     return true;
   } catch (e) {
     console.warn("[report] threw:", e);
+    return false;
+  }
+}
+
+// Tile-side parallels to the dot blur/report. Personal blur is a
+// localStorage set (no server state, daily reset is incidental — the
+// underlying tile rows wipe at midnight UTC and stale IDs become
+// harmless dead weight). Report inserts into the public `tile_reports`
+// table; same admin-only triage pattern as the messages `reports` table.
+const MUTED_TILES_KEY = "hw-muted-tile-ids";
+const mutedTileIds = new Set();
+(function loadMutedTileIds() {
+  try {
+    const raw = localStorage.getItem(MUTED_TILES_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    // Filter to non-empty strings so stale null/undefined from any prior
+    // corrupt state can't ever match a real tile UUID via Set.has().
+    if (Array.isArray(arr)) for (const id of arr) {
+      if (typeof id === "string" && id) mutedTileIds.add(id);
+    }
+  } catch (e) { /* ignore corrupt storage */ }
+})();
+function saveMutedTileIds() {
+  try { localStorage.setItem(MUTED_TILES_KEY, JSON.stringify([...mutedTileIds])); }
+  catch (e) { /* quota or disabled — no-op */ }
+}
+function toggleMutedTile(id) {
+  // Refuse to add a non-string / empty id. Guards against the bug where
+  // a tile object loaded without `id` selected would poison the set with
+  // `undefined` and silently blur every tile.
+  if (typeof id !== "string" || !id) return;
+  if (mutedTileIds.has(id)) mutedTileIds.delete(id);
+  else mutedTileIds.add(id);
+  saveMutedTileIds();
+}
+async function reportTile(tileId) {
+  try {
+    const { error } = await sb.from("tile_reports").insert({ tile_id: tileId });
+    if (error) {
+      console.warn("[tile report] failed:", error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn("[tile report] threw:", e);
     return false;
   }
 }
@@ -8971,7 +9088,12 @@ function buildCastSection(msg, wrap) {
 
   let elBtn, elOverlay, elMosaic, elMosaicCtx, elDraw, elDrawCtx,
       elStatus, elSwatches, elDone, elUndo, elBack,
-      elView, elViewCanvas, elViewCtx, elViewMood;
+      elView, elViewCanvas, elViewCtx, elViewMood,
+      elViewActions, elViewMenu;
+  // Tile currently shown in the lightbox. Tracked at the IIFE level so
+  // the kebab menu handlers (Blur / Report) know which tile they're
+  // acting on without having to re-query the DOM. Cleared on exit.
+  let viewTile = null;
 
   function tileBounds(i, sizeW, sizeH) {
     const col = i % realmCols;
@@ -9072,10 +9194,14 @@ function buildCastSection(msg, wrap) {
 
     // Strokes for filled tiles, painted on top of the colored tile bg.
     // Each tile's strokes are clipped to its own bounds so a thick
-    // brush near the edge can't bleed into the next tile.
+    // brush near the edge can't bleed into the next tile. Personal-mute
+    // tiles (Blur from the lightbox kebab) skip the strokes entirely —
+    // the mood-color background still paints so the tile reads as
+    // "filled but hidden by me," not as "empty."
     for (let i = 0; i < REALM_TILE_COUNT; i++) {
       const t = filledByIndex[i];
       if (!t) continue;
+      if (mutedTileIds.has(t.id)) continue;
       const b = tileBounds(i, W, H);
       elMosaicCtx.save();
       elMosaicCtx.beginPath();
@@ -9159,7 +9285,7 @@ function buildCastSection(msg, wrap) {
     try {
       const { data, error } = await sb
         .from("tiles")
-        .select("tile_index, stroke_data, mood, created_at")
+        .select("id, tile_index, stroke_data, mood, created_at")
         .gte("created_at", todayMidnightUTC());
       if (error) {
         console.warn("[realm] tiles fetch failed:", error.message);
@@ -9271,8 +9397,15 @@ function buildCastSection(msg, wrap) {
   // Lightbox view: render one filled tile enlarged so you can study
   // it. Read-only, no toolbar, dismiss with tap / × / Esc. Polling
   // pauses while open so the view doesn't repaint mid-gaze.
+  //
+  // Even when a tile is personally-blurred in the mosaic, the lightbox
+  // still shows its strokes — the visitor explicitly tapped it, so
+  // un-hiding it for one inspection is intentional. The Blur button
+  // in the kebab swaps to "Unblur" so they can drop the mute on the
+  // same tap if they want.
   function enterViewMode(tile) {
     if (!tile || !elViewCtx) return;
+    viewTile = tile;
     const size = elViewCanvas.width;
     elViewCtx.fillStyle = tileBgColor(tile);
     elViewCtx.fillRect(0, 0, size, size);
@@ -9287,13 +9420,70 @@ function buildCastSection(msg, wrap) {
         ? MOOD_BY_ID[tile.mood].name
         : "";
     }
+    rebuildViewMenu();
     elOverlay.classList.add("view-mode");
     stopPolling();
   }
 
   function exitViewMode() {
+    closeViewMenu();
+    viewTile = null;
     elOverlay.classList.remove("view-mode");
     if (isOpen) startPolling();
+  }
+
+  // Kebab menu: rebuilt on every lightbox open so the Blur/Unblur
+  // label reflects the current mute state and any in-flight Report
+  // state from a previous open is cleared. Handlers re-bound each
+  // build to keep the event wiring colocated with the HTML.
+  function rebuildViewMenu() {
+    if (!elViewMenu || !viewTile) return;
+    const muted = mutedTileIds.has(viewTile.id);
+    elViewMenu.innerHTML =
+      `<button type="button" class="realm-view-blur" role="menuitem">${muted ? "Unblur" : "Blur"}</button>` +
+      `<button type="button" class="realm-view-report" role="menuitem">Report</button>`;
+    const blurBtn = elViewMenu.querySelector(".realm-view-blur");
+    const reportBtn = elViewMenu.querySelector(".realm-view-report");
+    if (blurBtn) blurBtn.addEventListener("click", onViewBlur);
+    if (reportBtn) reportBtn.addEventListener("click", onViewReport);
+  }
+
+  function onViewBlur(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!viewTile) return;
+    toggleMutedTile(viewTile.id);
+    closeViewMenu();
+    renderMosaic();
+    // Exit so the visitor immediately sees the mosaic reflect the
+    // change. If they wanted to keep looking, they could re-tap.
+    exitViewMode();
+  }
+
+  async function onViewReport(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!viewTile || !elViewMenu) return;
+    const blurBtn = elViewMenu.querySelector(".realm-view-blur");
+    const reportBtn = elViewMenu.querySelector(".realm-view-report");
+    if (blurBtn) blurBtn.disabled = true;
+    if (reportBtn) reportBtn.disabled = true;
+    const ok = await reportTile(viewTile.id);
+    elViewMenu.innerHTML =
+      `<div class="realm-view-menu-status${ok ? "" : " err"}">` +
+        (ok ? "reported. thanks." : "report failed. try again.") +
+      `</div>`;
+    setTimeout(closeViewMenu, 1300);
+  }
+
+  function closeViewMenu() {
+    if (elViewMenu) elViewMenu.classList.remove("open");
+    if (elViewActions) elViewActions.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDocClickForViewMenu);
+  }
+  function onDocClickForViewMenu(ev) {
+    if (!elViewMenu || !elViewActions) return;
+    if (!elViewMenu.contains(ev.target) && !elViewActions.contains(ev.target)) closeViewMenu();
   }
 
   // Undo + Done both track strokes.length: nothing to commit and
@@ -9457,9 +9647,11 @@ function buildCastSection(msg, wrap) {
     elDone       = document.getElementById("realmDone");
     elUndo       = document.getElementById("realmUndo");
     elBack       = document.getElementById("realmBack");
-    elView       = document.getElementById("realmView");
-    elViewCanvas = document.getElementById("realmViewCanvas");
-    elViewMood   = document.getElementById("realmViewMood");
+    elView        = document.getElementById("realmView");
+    elViewCanvas  = document.getElementById("realmViewCanvas");
+    elViewMood    = document.getElementById("realmViewMood");
+    elViewActions = document.getElementById("realmViewActions");
+    elViewMenu    = document.getElementById("realmViewMenu");
     if (!elBtn || !elOverlay || !elMosaic || !elDraw) return;
 
     elMosaicCtx = elMosaic.getContext("2d");
@@ -9531,6 +9723,26 @@ function buildCastSection(msg, wrap) {
       e.stopPropagation();
       exitViewMode();
     });
+    // Kebab toggle. stopPropagation so the realmView tap-anywhere
+    // handler above doesn't also fire and exit the lightbox under us.
+    // setTimeout(0) on the doc-click listener defers it past the
+    // current click so opening the menu doesn't immediately re-close.
+    if (elViewActions && elViewMenu) {
+      elViewActions.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const isMenuOpen = elViewMenu.classList.toggle("open");
+        elViewActions.setAttribute("aria-expanded", isMenuOpen ? "true" : "false");
+        if (isMenuOpen) {
+          setTimeout(() => document.addEventListener("click", onDocClickForViewMenu), 0);
+        } else {
+          document.removeEventListener("click", onDocClickForViewMenu);
+        }
+      });
+      // Clicks landing on menu padding (between items) shouldn't
+      // bubble out to the realmView dismiss handler.
+      elViewMenu.addEventListener("click", (e) => e.stopPropagation());
+    }
     elMosaic.addEventListener("click", onMosaicClick);
 
     elDraw.addEventListener("pointerdown",   onDrawPointerDown);
