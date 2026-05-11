@@ -209,8 +209,20 @@ on the same continent can each leave one short reply, building a multi-voice
 thread that's bounded by a shared 500-character budget across all replies.
 Once the budget is spent the thread locks for the day. The flare's question
 itself is capped at 100 chars and is **not** counted against the 500. Each
-individual reply is capped at 50 chars. Flares unlock once the user has
-dropped a dot today. One flare per day per device. Reset at midnight UTC.
+individual reply is capped at 50 chars. **Both planting and responding
+require a dropped dot today** — the response gate was tightened
+2026-05-10 to match the rest of the site's "present today" rule
+(previously only planting required a dot). One flare per day per
+device. Reset at midnight UTC.
+
+### Locked-state hint priority (responding)
+- When the visitor hasn't dropped today, the locked-state message
+  is **"drop a dot first to respond"** — this takes priority over
+  the continent-mismatch hint. Rationale: a North American looking
+  at a North America flare should see the actionable next step
+  ("drop a dot") rather than the misleading "wrong continent" copy.
+- Continent-mismatch hint only surfaces once the visitor has
+  dropped today.
 
 ### Tables
 - `flares` (id, text, lat, lng, loc, continent, planter_id, created_at). The
@@ -416,9 +428,11 @@ per day, one cast per receiver per day, cross-continental only.
   flares (PR-2 deferred).
 
 ### UI flow
-- Cast button is the **4th button** in the bottom toolbar, between
-  the flare and the realm pencil. Mirrors flare's three-state
-  pattern (`locked` / resting / `.active`) and uses the **flare amber
+- Cast button is the rightmost button in the bottom toolbar, after
+  flare. (Was the 4th of five before the Drawing Realm pencil was
+  hidden 2026-05-10; the realm code/CSS/tables are still in place,
+  see Drawing Realm § Status.) Mirrors flare's three-state pattern
+  (`locked` / resting / `.active`) and uses the **flare amber
   `#ff9e3d`** across all surfaces (toolbar button, in-popup cast
   trigger icon, rules-modal cast icon, polylines on the map):
   - **`.locked`** — dim gray, not-allowed cursor. Set when the
@@ -531,6 +545,23 @@ tile per UTC day (capped at 100/day). The tile's background = the
 visitor's mood color from their dropped dot; their strokes paint on top.
 The mosaic resets at midnight UTC alongside all other daily tables.
 
+### Status — currently hidden in production (2026-05-10)
+- Pencil button is hidden in the bottom toolbar via the HTML `hidden`
+  attribute on `#realmBtn`. The id-selector `#realmBtn { display: flex }`
+  outranks the browser's default `[hidden] { display: none }`, so a
+  specific `#realmBtn[hidden] { display: none }` rule was added to make
+  the attribute take effect.
+- The Drawing Realm section was also removed from the rules modal.
+- All underlying realm code, CSS, DOM, and Supabase tables (`tiles`,
+  `tiles_archive`, `tile_reports`) remain in place. Re-enabling is a
+  one-line revert of the `hidden` attribute plus restoring the rules
+  modal section.
+- Legal pages (terms, privacy) keep their drawing-realm /
+  public-canvas-archive language because `tiles_archive` still holds
+  real archived canvases from prior days. The disclosure remains
+  factually accurate, and coverage is already there if the realm
+  returns.
+
 ### Spec lock-ins (durable design decisions, not derivable from code)
 - **Async, not realtime.** No Supabase realtime subscriptions on `tiles`;
   the mosaic refreshes via the same 30s polling pattern as dots/flares.
@@ -627,7 +658,8 @@ The mosaic resets at midnight UTC alongside all other daily tables.
 ### Visual identity
 - Pencil button is the **5th button** in the bottom toolbar, rightmost.
   Same 58px round shell as the others, stroked SVG (`viewBox 24 24`).
-  `.locked` class dims it when `!hasDroppedToday()`.
+  `.locked` class dims it when `!hasDroppedToday()`. **(Currently
+  hidden — see Status above.)**
 - Realm overlay: full-screen frosted glass over the map (matches the
   rules modal recipe: `rgba(10, 18, 30, 0.55)` + `blur(3px)`). The
   widget chrome (#topNav / #hwToggle / #bottomActions / leaflet zoom)
@@ -668,6 +700,28 @@ The mosaic resets at midnight UTC alongside all other daily tables.
   mosaic; in mosaic → close realm.
 - No × button on the lightbox — tap-anywhere-to-dismiss replaces it.
 
+### Tile blur / report (kebab on lightbox)
+- Top-right of the tile lightbox is a kebab button with the same
+  Blur + Report dropdown the dot popup uses. `stopPropagation` is
+  applied to the kebab, the menu, and every menu item so a click
+  inside the menu doesn't bubble up and dismiss the lightbox.
+- **Blur** toggles a personal-mute set in `localStorage` under
+  `hw-muted-tile-ids` (constants: `MUTED_TILES_KEY`, `mutedTileIds`
+  Set). In the mosaic, muted tiles keep their mood-color background
+  but skip rendering the strokes, so the cell reads as "filled but
+  hidden by me," not as empty. Other visitors are unaffected.
+  Per-device, no server state.
+- **Report** fire-and-forget INSERTs into `tile_reports` (`tile_id`
+  + `created_at`, INSERT-only public RLS, no SELECT — admin-only
+  triage via the Supabase dashboard). The menu swaps inline to
+  "reported. thanks." on success or "report failed. try again."
+  on error, then closes.
+- Defensive guards: `loadTiles()` must SELECT `id` (a prior bug
+  omitted it, which poisoned `mutedTileIds` with `undefined` and
+  blurred every tile at once); the localStorage loader filters
+  to non-empty strings so any junk that ever leaks in can never
+  match a real tile UUID.
+
 ### One-time migration SQL (current)
 ```sql
 CREATE TABLE IF NOT EXISTS tiles (
@@ -692,12 +746,25 @@ CREATE POLICY "anyone can insert tiles" ON tiles
     AND jsonb_typeof(stroke_data) = 'array'
   );
 
--- Update the midnight cron to include tiles. Idempotent (cron.schedule
--- replaces in place when the jobname matches).
+-- Tile reports (admin-only triage signal from the lightbox kebab).
+CREATE TABLE IF NOT EXISTS tile_reports (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  tile_id uuid NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE tile_reports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anyone can insert tile reports" ON tile_reports
+  FOR INSERT WITH CHECK (true);
+-- No SELECT policy on purpose: tile reports are admin-only signals.
+
+-- Update the midnight cron to include tiles and tile_reports. Idempotent
+-- (cron.schedule replaces in place when the jobname matches). NOTE: the
+-- canonical schedule lives in `cron.sql` and also runs the
+-- tiles → tiles_archive copy before the truncate.
 SELECT cron.schedule(
   'midnight-utc-reset',
   '0 0 * * *',
-  $$ TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims, tiles; $$
+  $$ TRUNCATE TABLE reports, tile_reports, casts, flare_responses, flares, messages, chest_claims, tiles; $$
 );
 ```
 
@@ -856,8 +923,15 @@ SELECT cron.schedule(
 ## Midnight UTC reset
 - Authoritative reset is server-side via Supabase `pg_cron`. Job
   `midnight-utc-reset` runs
-  `TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims, tiles`
+  `TRUNCATE TABLE reports, tile_reports, casts, flare_responses, flares, messages, chest_claims, tiles`
   at `0 0 * * *` (00:00 UTC daily). pg_cron in Supabase runs in UTC.
+  (`cron.sql` is the canonical schedule and also runs the
+  tiles → tiles_archive copy before the TRUNCATE; verify it
+  includes `tile_reports` before relying on the truncate above.)
+- **Reset countdown amber-under-one-hour**: the visible countdown
+  fades to flare amber `#ff9e3d` when less than one hour remains
+  until midnight UTC. Ambient color cue only — no animation, no
+  size change.
 - Source of truth for the schedule lives at `cron.sql` in the repo root.
   If pg_cron is reinstalled or the project is migrated, run that file to
   restore the job.
