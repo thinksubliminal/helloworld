@@ -37,6 +37,11 @@
 <meta name="theme-color" content="#0e1d2d" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Museum artist data — sets window.artistsData with the slot→artist
+     mapping for the gallery. Loaded via <script src> instead of fetched
+     so it works under file:// (where fetch is CORS-blocked) AND over
+     HTTPS. Edit artists.js to add / remove / rename pieces on the wall. -->
+<script src="artists.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@800&display=swap">
@@ -1042,6 +1047,28 @@
     align-items: center;
     gap: 8px;
     pointer-events: auto;
+    /* Staggered morph between toolbar and back-to-map pill. The three
+       layers (toolbar shell, normal buttons, back-to-map) hand off in
+       sequence rather than animating in lockstep, which reads as one
+       smooth motion instead of a busy crossfade.
+       EXIT direction: shell rematerializes mid-cycle (delay 0.1s) so
+       it visually catches the buttons as they fade in afterward. */
+    transition: background 0.28s ease 0.1s,
+                border-color 0.28s ease 0.1s,
+                -webkit-backdrop-filter 0.28s ease 0.1s,
+                backdrop-filter 0.28s ease 0.1s;
+  }
+  #bottomActions.gallery-mode {
+    background: transparent;
+    border-color: transparent;
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+    /* ENTER direction: shell dissolves mid-cycle so the normal buttons
+       get a head start fading out. */
+    transition: background 0.28s ease 0.1s,
+                border-color 0.28s ease 0.1s,
+                -webkit-backdrop-filter 0.28s ease 0.1s,
+                backdrop-filter 0.28s ease 0.1s;
   }
   #dropBtn {
     width: 58px; height: 58px;
@@ -1065,6 +1092,168 @@
   }
   #dropBtn:active { transform: scale(0.96); }
   #dropBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* Gallery mode — smooth morph between the normal toolbar buttons and
+     the back-to-map pill. Both states are always laid out (no display
+     toggling); the swap is purely visual via opacity + scale, with the
+     back-to-map pill positioned absolutely on top of the normal row so
+     the two can cross-fade in place. The longer opacity transition
+     (0.32s) is the dominant signal; the scale curve adds a subtle
+     bloom-in / bloom-out feel on each side. */
+  #bottomActions { position: relative; }
+  #dropBtn, #flareBtn, #castBtn, #realmBtn, #museumBtn {
+    /* EXIT: buttons re-enter LAST, after the back-to-map pill has
+       collapsed and the toolbar shell has rematerialized. */
+    transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1) 0.22s,
+                opacity   0.32s ease 0.22s,
+                background 0.15s ease,
+                border-color 0.15s ease;
+  }
+  #bottomActions.gallery-mode #dropBtn,
+  #bottomActions.gallery-mode #flareBtn,
+  #bottomActions.gallery-mode #castBtn,
+  #bottomActions.gallery-mode #realmBtn,
+  #bottomActions.gallery-mode #museumBtn {
+    opacity: 0;
+    transform: scale(0.72);
+    pointer-events: none;
+    /* ENTER: buttons fade out FIRST, no delay. */
+    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
+                opacity   0.22s ease,
+                background 0.15s ease,
+                border-color 0.15s ease;
+  }
+  /* Ambient map-chrome that doesn't belong in the gallery space — every
+     line in the bottom-text cluster refers to the daily-mark loop, which
+     is irrelevant inside the museum. */
+  body.in-gallery #resetTimer,
+  body.in-gallery #hint,
+  body.in-gallery #dropPrompt { display: none; }
+  /* Modals open while in the gallery need a darker/blurrier backdrop —
+     the default 0.55 / blur(3px) is calibrated for the navy map and
+     lets the warm-toned art frames bleed through too brightly. */
+  body.in-gallery #helpModal {
+    background: rgba(6, 12, 22, 0.86);
+    -webkit-backdrop-filter: blur(6px);
+            backdrop-filter: blur(6px);
+  }
+
+  /* HW widget stays hidden — museum entry is a toolbar button now. */
+  #hwToggle { display: none !important; }
+
+  /* Museum entry — circular pencil-icon button in the toolbar that
+     glides the visitor to the gallery. Mirrors the drop/flare button
+     treatment so it sits naturally alongside them in the row. */
+  #museumBtn {
+    width: 58px; height: 58px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  #museumBtn:hover {
+    transform: scale(1.07);
+    background: rgba(255, 255, 255, 0.14);
+  }
+  #museumBtn:active { transform: scale(0.96); }
+  #museumBtn svg { width: 18px; height: 18px; display: block; }
+
+  /* Back-to-map pill — sits absolutely centered inside the toolbar so it
+     can cross-fade with the normal buttons during the gallery-mode
+     morph. Hidden by default (opacity 0 + slight shrink), revealed when
+     #bottomActions has .gallery-mode. */
+  #backToMapBtn {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    height: 58px;
+    padding: 0 18px 0 22px;
+    border-radius: 50px;
+    border: 0.5px solid #173047;
+    background: rgba(8, 17, 25, 0.85);
+    -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+    color: rgba(255, 255, 255, 0.92);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-50%) scale(0.85);
+    pointer-events: none;
+    /* EXIT: back-to-map collapses FIRST, no delay. */
+    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
+                opacity   0.22s ease,
+                background 0.15s ease,
+                border-color 0.15s ease;
+  }
+  #backToMapBtn:hover {
+    background: rgba(8, 17, 25, 0.95);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  #backToMapBtn svg { width: 16px; height: 16px; display: block; }
+  #bottomActions.gallery-mode #backToMapBtn {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+    pointer-events: auto;
+    /* ENTER: bloom in LAST after the buttons fade and the shell dissolves. */
+    transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1) 0.22s,
+                opacity   0.34s ease 0.22s,
+                background 0.15s ease,
+                border-color 0.15s ease;
+  }
+
+  /* Submit-work link — quiet text link surfacing only in gallery mode,
+     sitting to the right of the back-to-map pill. Sends artists to a
+     Google Form for submissions. Update the href on #submitLink to
+     point at the real form URL once it exists. */
+  #submitLink {
+    position: absolute;
+    top: 50%;
+    left: calc(50% + 110px);
+    transform: translateY(-50%);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    text-decoration: none;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    /* EXIT: fades out quickly as you leave the gallery. */
+    transition: opacity 0.18s ease, color 0.15s ease;
+  }
+  #submitLink:hover { color: rgba(255, 255, 255, 0.95); }
+  #bottomActions.gallery-mode #submitLink {
+    opacity: 1;
+    pointer-events: auto;
+    /* ENTER: fades in LAST, just after the back-to-map pill finishes
+       blooming, so the link arrives as a quiet afterthought. */
+    transition: opacity 0.32s ease 0.42s, color 0.15s ease;
+  }
+  /* Narrow viewports: sit ABOVE the back-to-map pill (the toolbar is
+     pinned to the bottom of the viewport, so "below" runs off-screen). */
+  @media (max-width: 600px) {
+    #submitLink {
+      top: auto;
+      bottom: calc(100% + 14px);
+      left: 50%;
+      transform: translateX(-50%);
+    }
+  }
 
   /* Pulsing dot inside the + button — reuses the same @keyframes pulse the
      map dots use so the button visually previews what it does. */
@@ -1519,6 +1708,135 @@
     white-space: nowrap;
   }
   .realm-view-menu-status.err { color: #ff8585; }
+
+  /* Gallery lightbox — opens when a visitor taps an art frame on the map.
+     Shares the realm overlay's frosted-glass material so the two lightbox
+     surfaces feel like the same system. Tap anywhere (backdrop, art, the
+     close × or ESC) dismisses back to the map. */
+  #galleryLightbox {
+    position: fixed; inset: 0;
+    background: rgba(8, 15, 25, 0.74);
+    -webkit-backdrop-filter: blur(5px);
+            backdrop-filter: blur(5px);
+    z-index: 1200;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  #galleryLightbox.open { display: flex; }
+  body.gallery-lightbox-active { overflow: hidden; }
+  .gallery-close {
+    position: absolute;
+    top: 24px; right: 24px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(20, 30, 45, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+  }
+  .gallery-close:hover {
+    background: rgba(20, 30, 45, 0.9);
+    color: #fff;
+  }
+  /* Container holds either an inline <svg> (real artist, framed with the
+     embedded image) or an <img> pointing at a sample SVG (placeholder).
+     The inner element gets the visual chrome (radius, shadow). */
+  .gallery-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: 64vh;
+    max-width: 92vw;
+  }
+  .gallery-art > svg,
+  .gallery-art > img {
+    display: block;
+    max-height: 64vh;
+    max-width: 92vw;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1),
+                0 12px 50px rgba(0, 0, 0, 0.5);
+  }
+  .gallery-info {
+    margin-top: 20px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.95);
+    max-width: 460px;
+    padding: 0 20px;
+  }
+  .gallery-artist {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 4px 0;
+    color: rgba(255, 255, 255, 0.96);
+  }
+  .gallery-title-year {
+    font-size: 13px;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 0;
+  }
+  .gallery-bio {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.5;
+    margin: 12px 0 0 0;
+  }
+  .gallery-link {
+    display: inline-block;
+    margin-top: 14px;
+    font-size: 13px;
+    color: #ff9e3d;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+  }
+  .gallery-link:hover { text-decoration: underline; }
+  .gallery-hint {
+    margin-top: 18px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.04em;
+  }
+
+  /* Golden hover glow on the gallery frames — `drop-shadow` rather than
+     `box-shadow` so the glow follows the frame's transparent regions
+     (it hugs the gold border instead of casting a rectangular halo
+     around the overlay's bounding box). Touch devices get the same
+     glow briefly on tap via :active.
+     `will-change: transform` promotes each frame to its own GPU layer
+     so the flyTo animation doesn't stutter while 50 overlays re-project
+     to new pixel positions on every frame. */
+  .gallery-frame {
+    cursor: pointer;
+    transition: opacity 0.1s ease, filter 0.25s ease;
+    will-change: transform, opacity;
+  }
+  .gallery-frame:hover,
+  .gallery-frame:active {
+    filter: drop-shadow(0 0 14px rgba(245, 210, 130, 0.6));
+  }
+  /* During a flyTo between the main map and the gallery, hide the 50
+     frame overlays so they're not continuously re-projecting through
+     the zoom curve (which makes the landing feel rough). They fade
+     back in on arrival via the .gallery-frame opacity transition.
+     Fade-out during trip start is faster (0.18s) so leaving the
+     gallery doesn't feel sluggish — fade-in on arrival is slower
+     (0.45s) so the wall reveals itself with weight. */
+  body.gallery-trip .gallery-frame {
+    opacity: 0;
+    transition-duration: 0.18s;
+  }
 
   /* Draw mode — full-screen single-tile canvas + bottom toolbar.
      Hidden until the user taps their assigned tile in the mosaic.
@@ -2838,6 +3156,20 @@
         <path d="M14 6 L18 10"/>
       </svg>
     </button>
+    <button id="museumBtn" type="button" aria-label="enter the museum">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M16.5 3.5 L20.5 7.5 L7.5 20.5 L3.5 20.5 L3.5 16.5 Z"/>
+        <path d="M14 6 L18 10"/>
+      </svg>
+    </button>
+    <button id="backToMapBtn" type="button" aria-label="back to map">
+      <span>back to map</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M5 12h14"/>
+        <path d="M12 5l7 7-7 7"/>
+      </svg>
+    </button>
+    <a id="submitLink" href="https://forms.gle/eQMkUrdNEjJKwFN99" target="_blank" rel="noopener" aria-label="submit work to the museum">submit work</a>
   </div>
 </div>
 <script>
@@ -3034,6 +3366,18 @@
     </div>
     <div class="realm-draw-hint">tap to close</div>
   </div>
+</div>
+
+<div id="galleryLightbox" role="dialog" aria-modal="true" aria-label="Artwork detail">
+  <button class="gallery-close" id="galleryClose" type="button" aria-label="Close">×</button>
+  <div id="galleryArt" class="gallery-art"></div>
+  <div class="gallery-info">
+    <h2 id="galleryArtist" class="gallery-artist"></h2>
+    <p id="galleryTitleYear" class="gallery-title-year"></p>
+    <p id="galleryBio" class="gallery-bio"></p>
+    <a id="galleryLink" class="gallery-link" target="_blank" rel="noopener"></a>
+  </div>
+  <div class="gallery-hint">tap to close</div>
 </div>
 
 <div id="compose" role="dialog" aria-modal="true">
@@ -4145,16 +4489,358 @@ map.getPane("countryPane").style.zIndex = 350;
 map.getPane("countryPane").style.pointerEvents = "none";
 
 // ───────────── SAMPLE ART (left-side extra space) ─────────────
-// Placeholder rectangle representing a piece of art at 6:9 (portrait, 2:3)
-// aspect ratio. Lives in the new pannable band west of the main world
-// (lng ∈ [-720, -180]) opened up by lowering HORIZ_BOUND.
-// Centered at [10, -300]: 12° wide × 18° tall.
-L.rectangle([[1, -306], [19, -294]], {
-  color: "#ff9e3d",
-  weight: 2,
-  fillColor: "#1a2438",
-  fillOpacity: 0.85
-}).addTo(map);
+// 50-frame salon hang: 10 columns × 5 rows, centered at (lat 0, lng -450)
+// — the geographic midpoint of the empty band west of the main world.
+// Frame orientation rotates through portrait → landscape → square along
+// each row, and the sequence is offset by one each row, so no two
+// adjacent frames (horizontal OR vertical) share the same shape.
+// Frames keep their true aspect ratios:
+//   - Portrait  (P)  3:4: 12° wide × 16° tall
+//   - Landscape (L)  4:3: 16° wide × 12° tall
+//   - Square    (S)  1:1: 14° × 14°
+// Column/row pitch is 22° (centers spaced 22° apart), giving 6–10° gaps
+// between frames depending on the adjacent orientations.
+const ORIENTATIONS = ["P", "L", "S"];
+
+// Frame asset paths. SAMPLE = all-in-one (frame + sample art baked in),
+// shown for slots that don't have a real artist assigned yet. BARE =
+// frame with a transparent art opening, laid on top of an artist's
+// image overlay so the image shows through the cutout.
+const FRAME_SAMPLE_SRC = {
+  P: "assets/art-frame-sample-portrait.svg",
+  L: "assets/art-frame-sample-landscape.svg",
+  S: "assets/art-frame-sample-square.svg",
+};
+// Bare-frame SVG dimensions per orientation. Used to generate inline
+// SVG elements on the fly (see buildBareFrameSvg) so we can layer the
+// frame chrome over the artist's image without depending on external
+// SVG file loading — which has cross-origin quirks under file://.
+// "The art area is sacred" — TRUE 3:4 / 4:3 / 1:1 opening + uniform mat
+// on all sides. The math forces the OUTER frame to be 4:5 / 5:4 / 1:1
+// (not 3:4 / 4:3 / 1:1): given uniform inset N on every side, an outer
+// rectangle with the same aspect as its inner rectangle is impossible
+// unless N = 0. So we keep the inset uniform and let the outer ratio
+// shift slightly. Visually identical mat on every frame, image always
+// at its native aspect.
+const BARE_FRAME_DIMS = {
+  P: { vbW: 192, vbH: 240, goldT: 14, matT: 10, matS: 10, artX: 24, artY: 24, artW: 144, artH: 192 },
+  L: { vbW: 240, vbH: 192, goldT: 14, matT: 10, matS: 10, artX: 24, artY: 24, artW: 192, artH: 144 },
+  S: { vbW: 200, vbH: 200, goldT: 14, matT: 10, matS: 10, artX: 24, artY: 24, artW: 152, artH: 152 },
+};
+
+// Counter ensures each inline SVG instance gets unique gradient IDs.
+// Without this, multiple frames in the same document collide on `url(#…)`
+// references and only the first one renders its gold gradient.
+let bareFrameSeq = 0;
+function buildBareFrameSvg(orientation, imageUrl) {
+  const d = BARE_FRAME_DIMS[orientation];
+  const uid = `bf${++bareFrameSeq}`;
+  const goldId = `${uid}-gold`;
+  const shadowId = `${uid}-shadow`;
+  // The artist's image is embedded INSIDE this SVG via <image href> at
+  // the art opening's exact coordinates. Single render pass, single
+  // set of bounds — no chance of misalignment between layers.
+  const imageLayer = imageUrl
+    ? `<image href="${imageUrl}" x="${d.artX}" y="${d.artY}" width="${d.artW}" height="${d.artH}" preserveAspectRatio="none"/>`
+    : "";
+  // Solid gold rect + solid cream rect + image + gold accent. Matches
+  // the sample SVGs' structure exactly (no 4-strip seams that show as
+  // hairlines under non-uniform stretching). Image is rendered on top
+  // of cream, so the cream is only visible where the image isn't.
+  const svgString = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${d.vbW} ${d.vbH}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="${goldId}" x1="0" y1="0" x2="${d.vbW}" y2="${d.vbH}" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#e6c98a"/>
+          <stop offset="50%" stop-color="#b89456"/>
+          <stop offset="100%" stop-color="#6e562b"/>
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="${d.vbW}" height="${d.vbH}" fill="url(#${goldId})"/>
+      <rect x="4" y="4" width="${d.vbW - 8}" height="${d.vbH - 8}" fill="none" stroke="#3a2c11" stroke-width="0.6"/>
+      <rect x="${d.goldT}" y="${d.goldT}" width="${d.vbW - 2 * d.goldT}" height="${d.vbH - 2 * d.goldT}" fill="#eadfc5"/>
+      ${imageLayer}
+      <rect x="${d.artX - 2}" y="${d.artY - 2}" width="${d.artW + 4}" height="${d.artH + 4}" fill="none" stroke="#b89456" stroke-width="0.5" opacity="0.75"/>
+    </svg>
+  `;
+  return new DOMParser().parseFromString(svgString, "image/svg+xml").documentElement;
+}
+
+// Frame outer dims + art-opening dims (degrees). Outer is 4:5 / 5:4 / 1:1
+// to allow uniform mat thickness while keeping the art opening at true
+// 3:4 / 4:3 / 1:1. SVG-units-per-degree is constant at 15 across all
+// orientations, so the inset is exactly 1.6° (24 SVG units / 15) on
+// every side of every frame — visually consistent mat across the wall.
+const FRAME_SIZE = {
+  P: { w: 12.8, h: 16,   artW:  9.6,   artH: 12.8  },
+  L: { w: 16,   h: 12.8, artW: 12.8,   artH:  9.6  },
+  S: { w: 14,   h: 14,   artW: 10.64,  artH: 10.64 },
+};
+
+// Fallback artists for unassigned slots. The whole point of the JSON-
+// driven gallery is that these get replaced one slot at a time as real
+// artists are accepted via artists.json; until then, the wall shows
+// these three placeholders repeated across all 50 frames.
+const PLACEHOLDER_ARTISTS = {
+  P: {
+    name:  "Lorem Ipsum",
+    title: "Aliquam Tempor",
+    year:  2024,
+    bio:   "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+    link:  "",
+  },
+  L: {
+    name:  "Dolor Sit",
+    title: "Tempus Vitae",
+    year:  2024,
+    bio:   "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
+    link:  "",
+  },
+  S: {
+    name:  "Amet Consectetur",
+    title: "Sapien Lectus",
+    year:  2024,
+    bio:   "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.",
+    link:  "",
+  },
+};
+
+const GRID_COLS       = 10;
+const GRID_ROWS       = 5;
+const COL_PITCH       = 22;
+const ROW_PITCH       = 22;
+const GRID_CENTER_LAT = 0;
+const GRID_CENTER_LNG = -450;
+
+const halfGridW = ((GRID_COLS - 1) * COL_PITCH) / 2;
+const halfGridH = ((GRID_ROWS - 1) * ROW_PITCH) / 2;
+const topRow    = GRID_CENTER_LAT + halfGridH;
+const leftCol   = GRID_CENTER_LNG - halfGridW;
+
+// Mercator-space row centers. Spacing rows by equal degrees (22°)
+// makes them appear UNEVEN on screen because the Mercator projection
+// stretches 1° of latitude into more pixels at higher latitudes — so
+// row 0↔1 visibly looks wider than row 2↔3. Re-spacing the rows so
+// they're equidistant in Mercator y (the projection's vertical axis)
+// makes the wall read as a uniform grid regardless of latitude.
+const mercY    = (lat) => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+const invMercY = (y)   => (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
+const yTop     = mercY(topRow);
+const yBot     = mercY(GRID_CENTER_LAT - halfGridH);
+const yStep    = (yTop - yBot) / (GRID_ROWS - 1);
+const ROW_CENTER_LATS = Array.from({ length: GRID_ROWS },
+  (_, i) => invMercY(yTop - i * yStep));
+
+// Slot numbering: row-major, 1-indexed. Row 0 → slots 1–10, row 1 →
+// 11–20, etc. Each slot's orientation is fixed by the Latin-square
+// pattern; submitted art's shape must match its assigned slot.
+function slotIdFor(row, col) { return row * GRID_COLS + col + 1; }
+
+// Build a Map<slot, artistEntry> from window.artistsData, which is set
+// by artists.js (loaded via <script src> in the document head). Missing
+// or malformed data degrades to "everything shows sample art."
+function loadArtists() {
+  const data = (typeof window !== "undefined" && window.artistsData) || { artists: [] };
+  const bySlot = new Map();
+  for (const a of (data.artists || [])) {
+    if (a && typeof a.slot === "number") bySlot.set(a.slot, a);
+  }
+  return bySlot;
+}
+
+(function renderGallery() {
+  const artistsBySlot = loadArtists();
+  for (let row = 0; row < GRID_ROWS; row++) {
+    for (let col = 0; col < GRID_COLS; col++) {
+      const slot = slotIdFor(row, col);
+      // Empty slots use the Latin-square orientation as a placeholder
+      // for visual variety on the wall. Filled slots use the assigned
+      // artist's orientation, so the frame shape adapts to whatever
+      // was submitted — fill in slot order without worrying about
+      // shape mismatches.
+      const slotArtist = artistsBySlot.get(slot);
+      const o = (slotArtist && slotArtist.orientation) || ORIENTATIONS[(col + row) % 3];
+      const { w, h, artW, artH } = FRAME_SIZE[o];
+      const cLat = ROW_CENTER_LATS[row];
+      const cLng = leftCol + col * COL_PITCH;
+      // Mercator correction: at higher latitudes the projection stretches
+      // 1° of latitude into ~1/cos(lat)× the pixels that 1° of longitude
+      // takes. Without correction, frames at row 0/4 (lat ±44) get
+      // vertically stretched ~1.39×, and submitted artwork inside them
+      // looks elongated. Shrinking the lat span by cos(lat) per frame
+      // counters that so every frame renders at its true 3:4 / 4:3 / 1:1
+      // aspect regardless of which row it's in.
+      const cosLat = Math.cos(cLat * Math.PI / 180);
+      const hCorrected    = h    * cosLat;
+      const artHCorrected = artH * cosLat;
+      const frameBounds = [
+        [cLat - hCorrected / 2, cLng - w / 2],
+        [cLat + hCorrected / 2, cLng + w / 2],
+      ];
+      const artBounds = [
+        [cLat - artHCorrected / 2, cLng - artW / 2],
+        [cLat + artHCorrected / 2, cLng + artW / 2],
+      ];
+
+      const artist = slotArtist;
+      let frame, lightboxImg, lightboxData;
+
+      let lightboxImage; // null = placeholder (lightbox uses sample SVG)
+      if (artist && artist.image) {
+        // Real artist: single inline-SVG overlay with the artist's
+        // image embedded at the art opening's coordinates. One render
+        // pass, one set of bounds — no chance of misalignment between
+        // a separate image layer and the frame chrome.
+        frame         = L.svgOverlay(buildBareFrameSvg(o, artist.image), frameBounds, { interactive: true, className: "gallery-frame" });
+        lightboxImage = artist.image;
+        lightboxData  = artist;
+      } else {
+        // No artist assigned to this slot yet — show the sample SVG
+        // (frame + baked-in placeholder art) loaded as an image overlay.
+        frame         = L.imageOverlay(FRAME_SAMPLE_SRC[o], frameBounds, { interactive: true, className: "gallery-frame" });
+        lightboxImage = null;
+        lightboxData  = PLACEHOLDER_ARTISTS[o];
+      }
+
+      // stopPropagation keeps the click from also firing the map's
+      // click-to-drop-dot handler underneath the frame.
+      frame.on("click", (e) => {
+        L.DomEvent.stopPropagation(e.originalEvent);
+        openGalleryLightbox(o, lightboxImage, lightboxData);
+      });
+      frame.addTo(map);
+    }
+  }
+})();
+
+// Gallery lightbox — opens when a visitor taps any art frame. Shows the
+// artwork enlarged + artist info + a link out to the artist's site.
+// Dismisses on tap-anywhere, the close ×, or ESC. The link itself is
+// excluded from the tap-anywhere dismiss so a fresh tab can open without
+// yanking the dialog shut mid-gesture.
+const elGalleryLightbox  = document.getElementById("galleryLightbox");
+const elGalleryArt       = document.getElementById("galleryArt");
+const elGalleryArtist    = document.getElementById("galleryArtist");
+const elGalleryTitleYear = document.getElementById("galleryTitleYear");
+const elGalleryBio       = document.getElementById("galleryBio");
+const elGalleryLink      = document.getElementById("galleryLink");
+const elGalleryClose     = document.getElementById("galleryClose");
+
+// Hard caps on the lightbox fields so a too-long string can't break the
+// layout. Visible ellipsis on overflow signals "there's more — visit the
+// artist's site" rather than silently cropping mid-word.
+const GALLERY_LIMITS = { name: 40, title: 50, bio: 200 };
+function truncate(str, max) {
+  if (!str) return "";
+  if (str.length <= max) return str;
+  return str.slice(0, max - 1).trimEnd() + "…";
+}
+
+function openGalleryLightbox(orientation, imageUrl, artist) {
+  const name  = truncate(artist.name,  GALLERY_LIMITS.name);
+  const title = truncate(artist.title, GALLERY_LIMITS.title);
+  const bio   = truncate(artist.bio,   GALLERY_LIMITS.bio);
+
+  // Build the framed view inside the lightbox container. Real artists
+  // get a fresh inline SVG (frame chrome + embedded image, identical
+  // structure to what's on the wall — just sized to fit the lightbox).
+  // Placeholder slots show the orientation's sample SVG via <img>.
+  elGalleryArt.innerHTML = "";
+  const dims   = BARE_FRAME_DIMS[orientation];
+  const aspect = dims.vbW / dims.vbH;
+  let artEl;
+  if (imageUrl) {
+    artEl = buildBareFrameSvg(orientation, imageUrl);
+    // Gallery uses preserveAspectRatio="none" to fill Leaflet's
+    // projected bounds; in the lightbox we want true aspect, so strip
+    // the attribute (default is xMidYMid meet — preserves aspect).
+    artEl.removeAttribute("preserveAspectRatio");
+  } else {
+    artEl = document.createElement("img");
+    artEl.src = FRAME_SAMPLE_SRC[orientation];
+  }
+  // Explicit width preserves aspect inside the lightbox container.
+  // Without it, inline SVGs use a tiny ~300×150 intrinsic default and
+  // appear blank. min() respects whichever of viewport width or height
+  // hits first — so it fits both narrow and short windows.
+  artEl.style.width  = `min(92vw, ${(64 * aspect).toFixed(3)}vh)`;
+  artEl.style.height = "auto";
+  artEl.setAttribute("aria-label", `${title} by ${name}`);
+  elGalleryArt.appendChild(artEl);
+
+  elGalleryArtist.textContent    = name;
+  elGalleryTitleYear.textContent = `${title}, ${artist.year}`;
+  elGalleryBio.textContent       = bio;
+  if (artist.link) {
+    elGalleryLink.href          = artist.link;
+    elGalleryLink.textContent   = `Visit ${name} →`;
+    elGalleryLink.style.display = "";
+  } else {
+    elGalleryLink.style.display = "none";
+  }
+  elGalleryLightbox.classList.add("open");
+  document.body.classList.add("gallery-lightbox-active");
+}
+function closeGalleryLightbox() {
+  elGalleryLightbox.classList.remove("open");
+  document.body.classList.remove("gallery-lightbox-active");
+}
+
+elGalleryLightbox.addEventListener("click", (e) => {
+  if (e.target.closest(".gallery-link")) return;
+  closeGalleryLightbox();
+});
+elGalleryClose.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeGalleryLightbox();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && elGalleryLightbox.classList.contains("open")) {
+    closeGalleryLightbox();
+  }
+});
+
+// Gallery mode tracker — when the visitor's map center crosses west of
+// lng -180 (into the art gallery band), `body.in-gallery` and
+// `#bottomActions.gallery-mode` flip on; the bottom toolbar hides
+// entirely and the bottom-left #galleryToggle pill swaps its label +
+// direction arrow from "← see art gallery" to "back to map →". Re-
+// evaluated on every map move so the swap is live during pans, not just
+// at moveend.
+const elBottomActions = document.getElementById("bottomActions");
+const elMuseumBtn     = document.getElementById("museumBtn");
+const elBackToMapBtn  = document.getElementById("backToMapBtn");
+const GALLERY_LNG_THRESHOLD = -180;
+
+function updateGalleryMode() {
+  const inGallery = map.getCenter().lng < GALLERY_LNG_THRESHOLD;
+  elBottomActions.classList.toggle("gallery-mode", inGallery);
+  document.body.classList.toggle("in-gallery", inGallery);
+}
+map.on("move", updateGalleryMode);
+updateGalleryMode();
+
+// Museum button flies to the gallery's center; back-to-map flies home.
+// Leaflet's flyTo uses a Van Wijk trajectory (zoom out, pan, zoom in)
+// so visitors get a sense of traveling across the same world rather
+// than teleporting. Lightbox is dismissed first on the return trip so
+// the animation isn't masked by the overlay.
+function travelToMapPoint(latlng, duration) {
+  // Hide the gallery frames during the flyTo so they don't stutter
+  // through the zoom curve, then fade them back in on arrival.
+  document.body.classList.add("gallery-trip");
+  map.flyTo(latlng, INITIAL_ZOOM, { duration, easeLinearity: 0.7 });
+  map.once("moveend", () => {
+    document.body.classList.remove("gallery-trip");
+  });
+}
+elMuseumBtn.addEventListener("click", () => {
+  travelToMapPoint([GRID_CENTER_LAT, GRID_CENTER_LNG], 2.0);
+});
+elBackToMapBtn.addEventListener("click", () => {
+  if (elGalleryLightbox.classList.contains("open")) closeGalleryLightbox();
+  travelToMapPoint(INITIAL_CENTER, 1.7);
+});
 
 // ───────────── COUNTRY GEOJSON ─────────────
 const COUNTRIES_URL = "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_110m_admin_0_countries.geojson";

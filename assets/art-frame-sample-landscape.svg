@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 192" role="img" aria-label="Sample artwork in landscape frame">
+  <defs>
+    <linearGradient id="frameGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e6c98a"/>
+      <stop offset="50%" stop-color="#b89456"/>
+      <stop offset="100%" stop-color="#6e562b"/>
+    </linearGradient>
+    <linearGradient id="frameInnerShadow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer gold frame -->
+  <rect x="0" y="0" width="240" height="192" fill="url(#frameGold)"/>
+  <!-- Thin dark line on the outer edge -->
+  <rect x="4" y="4" width="232" height="184" fill="none" stroke="#3a2c11" stroke-width="0.6"/>
+  <!-- Cream mat (uniform 10 thick on all sides) -->
+  <rect x="14" y="14" width="212" height="164" fill="#eadfc5"/>
+  <!-- Thin gold accent just outside the art opening -->
+  <rect x="22" y="22" width="196" height="148" fill="none" stroke="#b89456" stroke-width="0.5" opacity="0.75"/>
+
+  <!-- Solid placeholder fill (true 4:3 art opening, 192 × 144 at 24, 24). -->
+  <rect x="24" y="24" width="192" height="144" fill="#081119"/>
+
+  <!-- Inner-top shadow for a sense of depth -->
+  <rect x="24" y="24" width="192" height="8" fill="url(#frameInnerShadow)"/>
+</svg>
