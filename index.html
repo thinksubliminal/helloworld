@@ -1838,24 +1838,20 @@
      visible only while the visitor is inside the gallery. Sits below
      the top nav; fades in slightly after the frames materialize so
      the wall is the first thing the visitor sees. */
-  /* Museum starfield — pulses softly in the background only while the
-     visitor is inside the gallery. Fixed to viewport so it reads as a
-     calm sky behind the wall regardless of pan/zoom. JS populates this
-     container with ~80 tiny pulsing divs on load. */
-  #museumStars {
-    position: fixed;
-    inset: 0;
+  /* Museum starfield — pulses softly behind the frames only while the
+     visitor is inside the gallery. Lives in a custom Leaflet pane at
+     z-index 350 (between tilePane 200 and overlayPane 400) so it sits
+     reliably below the framed art. Stars pan with the map since they
+     live in the map coordinate space. */
+  .museum-stars-pane {
     pointer-events: none;
-    z-index: 350;
     opacity: 0;
     transition: opacity 1.2s ease 0.4s;
   }
-  body.in-gallery #museumStars { opacity: 1; }
+  body.in-gallery .museum-stars-pane { opacity: 1; }
   .museum-star {
-    position: absolute;
     background: rgba(255, 255, 255, 0.9);
     border-radius: 50%;
-    opacity: 0;
     animation: museumStarPulse var(--dur, 4s) ease-in-out var(--delay, 0s) infinite;
   }
   @keyframes museumStarPulse {
@@ -3444,8 +3440,6 @@
   </div>
   <div class="gallery-hint">tap to close</div>
 </div>
-
-<div id="museumStars" aria-hidden="true"></div>
 
 <div id="museumPlacard" aria-hidden="true">
   Made something? Hang it here.
@@ -10645,32 +10639,53 @@ function buildCastSection(msg, wrap) {
 // ─────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────
 // Museum starfield — atmospheric layer for gallery mode only.
-// Generates ~80 tiny white dots at random positions; each gets its own
-// pulse duration and delay so they twinkle independently. Container
-// fades in via CSS when body.in-gallery is on. Stars don't pan with the
-// map — they're a fixed "sky" behind the wall, since most visitors land
-// at one zoom level and don't wander far. Pure CSS animation, no rAF.
+// Lives in a custom Leaflet pane (z-index 350, between tilePane 200 and
+// overlayPane 400) so stars sit reliably BEHIND the frames. Each star is
+// an L.marker with a divIcon, scattered across the museum's lat/lng
+// range. Each gets its own pulse duration and delay so they twinkle
+// independently. Pane opacity fades in via CSS when body.in-gallery is
+// on. Pure CSS animation, no rAF.
 // ─────────────────────────────────────────────────────────────────────────
 (function museumStars() {
-  const container = document.getElementById("museumStars");
-  if (!container) return;
-  const COUNT = 80;
-  for (let i = 0; i < COUNT; i++) {
-    const star = document.createElement("div");
-    star.className = "museum-star";
-    star.style.left = (Math.random() * 100) + "%";
-    star.style.top  = (Math.random() * 100) + "%";
-    // Most stars are 1px, a quarter 2px, a few 3px — varied weight feels
-    // less mechanical than uniform dots.
+  map.createPane("museumStars");
+  const pane = map.getPane("museumStars");
+  pane.style.zIndex = "350";
+  pane.classList.add("museum-stars-pane");
+
+  // Stars scattered across a band wider/taller than the wall so the
+  // sky reads as ambient even when the visitor pans a little.
+  const STAR_COUNT = 120;
+  const LAT_HALF = 70;
+  const LNG_HALF = 160;
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const lat = (Math.random() * 2 - 1) * LAT_HALF;
+    const lng = GRID_CENTER_LNG + (Math.random() * 2 - 1) * LNG_HALF;
+    // Most stars are 1px, a quarter 2px, a few 3px — varied weight
+    // feels less mechanical than uniform dots.
     const r = Math.random();
     const size = r < 0.05 ? 3 : r < 0.30 ? 2 : 1;
-    star.style.width  = size + "px";
-    star.style.height = size + "px";
-    // Pulse cycle: 3.5–7s. Delay scattered across 6s so the field never
-    // pulses in sync.
-    star.style.setProperty("--dur",   (3.5 + Math.random() * 3.5).toFixed(2) + "s");
-    star.style.setProperty("--delay", (Math.random() * 6).toFixed(2) + "s");
-    container.appendChild(star);
+    // Pulse cycle: 3.5–7s. Delay scattered across 6s so the field
+    // never pulses in sync.
+    const dur   = (3.5 + Math.random() * 3.5).toFixed(2);
+    const delay = (Math.random() * 6).toFixed(2);
+
+    const icon = L.divIcon({
+      className: "museum-star",
+      html: "",
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+    const m = L.marker([lat, lng], {
+      icon,
+      pane: "museumStars",
+      interactive: false,
+      keyboard: false,
+    }).addTo(map);
+    const el = m.getElement();
+    if (el) {
+      el.style.setProperty("--dur",   dur + "s");
+      el.style.setProperty("--delay", delay + "s");
+    }
   }
 })();
 
