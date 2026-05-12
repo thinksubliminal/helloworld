@@ -1838,6 +1838,31 @@
      visible only while the visitor is inside the gallery. Sits below
      the top nav; fades in slightly after the frames materialize so
      the wall is the first thing the visitor sees. */
+  /* Museum starfield — pulses softly in the background only while the
+     visitor is inside the gallery. Fixed to viewport so it reads as a
+     calm sky behind the wall regardless of pan/zoom. JS populates this
+     container with ~80 tiny pulsing divs on load. */
+  #museumStars {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 350;
+    opacity: 0;
+    transition: opacity 1.2s ease 0.4s;
+  }
+  body.in-gallery #museumStars { opacity: 1; }
+  .museum-star {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    opacity: 0;
+    animation: museumStarPulse var(--dur, 4s) ease-in-out var(--delay, 0s) infinite;
+  }
+  @keyframes museumStarPulse {
+    0%, 100% { opacity: 0.15; }
+    50%      { opacity: 0.75; }
+  }
+
   #museumPlacard {
     position: fixed;
     top: 80px;
@@ -3419,6 +3444,8 @@
   </div>
   <div class="gallery-hint">tap to close</div>
 </div>
+
+<div id="museumStars" aria-hidden="true"></div>
 
 <div id="museumPlacard" aria-hidden="true">
   Made something? Hang it here.
@@ -10616,6 +10643,37 @@ function buildCastSection(msg, wrap) {
 // for crisp lines on Retina. dt is clamped so a backgrounded tab returning
 // to focus doesn't teleport birds across the screen.
 // ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// Museum starfield — atmospheric layer for gallery mode only.
+// Generates ~80 tiny white dots at random positions; each gets its own
+// pulse duration and delay so they twinkle independently. Container
+// fades in via CSS when body.in-gallery is on. Stars don't pan with the
+// map — they're a fixed "sky" behind the wall, since most visitors land
+// at one zoom level and don't wander far. Pure CSS animation, no rAF.
+// ─────────────────────────────────────────────────────────────────────────
+(function museumStars() {
+  const container = document.getElementById("museumStars");
+  if (!container) return;
+  const COUNT = 80;
+  for (let i = 0; i < COUNT; i++) {
+    const star = document.createElement("div");
+    star.className = "museum-star";
+    star.style.left = (Math.random() * 100) + "%";
+    star.style.top  = (Math.random() * 100) + "%";
+    // Most stars are 1px, a quarter 2px, a few 3px — varied weight feels
+    // less mechanical than uniform dots.
+    const r = Math.random();
+    const size = r < 0.05 ? 3 : r < 0.30 ? 2 : 1;
+    star.style.width  = size + "px";
+    star.style.height = size + "px";
+    // Pulse cycle: 3.5–7s. Delay scattered across 6s so the field never
+    // pulses in sync.
+    star.style.setProperty("--dur",   (3.5 + Math.random() * 3.5).toFixed(2) + "s");
+    star.style.setProperty("--delay", (Math.random() * 6).toFixed(2) + "s");
+    container.appendChild(star);
+  }
+})();
+
 (function birdFlocks() {
   // Skip the layer entirely above this CSS-pixel width. Even with the
   // backing-buffer cap and the rAF stop-when-idle, the bird canvas
