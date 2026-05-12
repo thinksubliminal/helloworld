@@ -1131,6 +1131,15 @@
   body.in-gallery #dropPrompt,
   body.in-gallery #birdCanvas { display: none; }
 
+  /* Hide the world contents (continents, dots, flares, casts, marker
+     shadows) while inside the museum. Leaflet draws continents in
+     world copies, so without this rule Alaska reappears at lng -510
+     — right inside the museum's lng band. */
+  body.in-gallery .leaflet-countryPane-pane,
+  body.in-gallery .leaflet-marker-pane,
+  body.in-gallery .leaflet-shadow-pane,
+  body.in-gallery .leaflet-tile-pane { display: none; }
+
   /* Return trip from museum: hide the world's contents (continents,
      dots, flares, casts, heard panel) while the flyTo animates. The
      navy background stays so the trip still reads as motion through
@@ -1140,6 +1149,7 @@
   .leaflet-marker-pane,
   .leaflet-shadow-pane,
   .leaflet-tile-pane,
+  .leaflet-countryPane-pane,
   #hwToggle {
     transition: opacity 0.7s ease;
   }
@@ -1147,6 +1157,7 @@
   body.flying-home .leaflet-marker-pane,
   body.flying-home .leaflet-shadow-pane,
   body.flying-home .leaflet-tile-pane,
+  body.flying-home .leaflet-countryPane-pane,
   body.flying-home #hwToggle {
     opacity: 0;
     transition: opacity 0.2s ease;
