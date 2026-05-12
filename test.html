@@ -1134,11 +1134,16 @@
   /* Hide the world contents (continents, dots, flares, casts, marker
      shadows) while inside the museum. Leaflet draws continents in
      world copies, so without this rule Alaska reappears at lng -510
-     — right inside the museum's lng band. */
+     — right inside the museum's lng band. Opacity (not display:none)
+     so the world fades out gracefully when the lng threshold is
+     crossed mid-trip rather than poofing. */
   body.in-gallery .country-pane,
   body.in-gallery .leaflet-marker-pane,
   body.in-gallery .leaflet-shadow-pane,
-  body.in-gallery .leaflet-tile-pane { display: none; }
+  body.in-gallery .leaflet-tile-pane {
+    opacity: 0;
+    transition: opacity 0.55s ease;
+  }
 
   /* Return trip from museum: hide the world's contents (continents,
      dots, flares, casts, heard panel) while the flyTo animates. The
@@ -1161,6 +1166,17 @@
   body.flying-home #hwToggle {
     opacity: 0;
     transition: opacity 0.2s ease;
+  }
+  /* Symmetric to flying-home: when the visitor clicks the museum
+     button, fade out the world (NOT the overlay pane, which holds the
+     museum frames) over the first ~0.55s of the trip. */
+  body.leaving-earth .leaflet-marker-pane,
+  body.leaving-earth .leaflet-shadow-pane,
+  body.leaving-earth .leaflet-tile-pane,
+  body.leaving-earth .country-pane,
+  body.leaving-earth #hwToggle {
+    opacity: 0;
+    transition: opacity 0.55s ease;
   }
   /* Modals open while in the gallery need a darker/blurrier backdrop —
      the default 0.55 / blur(3px) is calibrated for the navy map and
@@ -4945,7 +4961,16 @@ updateGalleryMode();
 // breathing room above and below, instead of landing pressed-in.
 const MUSEUM_LANDING_ZOOM = INITIAL_ZOOM - 0.5;
 elMuseumBtn.addEventListener("click", () => {
+  // Start fading the world (continents, dots, flares, casts, heard
+  // panel) immediately on click so it transitions smoothly during the
+  // flight rather than poofing when the lng threshold is crossed.
+  // Class is removed on moveend; in-gallery's opacity:0 rule then
+  // keeps the world hidden for the rest of the museum visit.
+  document.body.classList.add("leaving-earth");
   map.flyTo([GRID_CENTER_LAT, GRID_CENTER_LNG], MUSEUM_LANDING_ZOOM);
+  map.once("moveend", () => {
+    document.body.classList.remove("leaving-earth");
+  });
 });
 elBackToMapBtn.addEventListener("click", () => {
   if (elGalleryLightbox.classList.contains("open")) closeGalleryLightbox();
