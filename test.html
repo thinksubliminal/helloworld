@@ -1130,6 +1130,27 @@
   body.in-gallery #hint,
   body.in-gallery #dropPrompt,
   body.in-gallery #birdCanvas { display: none; }
+
+  /* Return trip from museum: hide the world's contents (continents,
+     dots, flares, casts, heard panel) while the flyTo animates. The
+     navy background stays so the trip still reads as motion through
+     the same space; on arrival, body.flying-home is removed and the
+     contents fade in cleanly over 0.7s. */
+  .leaflet-overlay-pane,
+  .leaflet-marker-pane,
+  .leaflet-shadow-pane,
+  .leaflet-tile-pane,
+  #hwToggle {
+    transition: opacity 0.7s ease;
+  }
+  body.flying-home .leaflet-overlay-pane,
+  body.flying-home .leaflet-marker-pane,
+  body.flying-home .leaflet-shadow-pane,
+  body.flying-home .leaflet-tile-pane,
+  body.flying-home #hwToggle {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
   /* Modals open while in the gallery need a darker/blurrier backdrop —
      the default 0.55 / blur(3px) is calibrated for the navy map and
      lets the warm-toned art frames bleed through too brightly. */
@@ -4919,7 +4940,14 @@ elBackToMapBtn.addEventListener("click", () => {
   // Reset the bird simulation so in-flight birds don't pop back in
   // mid-screen when the canvas un-hides during the trip back.
   if (typeof window.__resetBirdFlock === "function") window.__resetBirdFlock();
+  // Hide the world's contents during the trip so the map appears
+  // clean on arrival and fades in smoothly via the CSS transition on
+  // .leaflet-*-pane. Class is removed on moveend.
+  document.body.classList.add("flying-home");
   map.flyTo(INITIAL_CENTER, INITIAL_ZOOM);
+  map.once("moveend", () => {
+    document.body.classList.remove("flying-home");
+  });
 });
 
 // ───────────── COUNTRY GEOJSON ─────────────
