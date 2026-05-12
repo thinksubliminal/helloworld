@@ -1135,7 +1135,7 @@
      shadows) while inside the museum. Leaflet draws continents in
      world copies, so without this rule Alaska reappears at lng -510
      — right inside the museum's lng band. */
-  body.in-gallery .leaflet-countryPane-pane,
+  body.in-gallery .country-pane,
   body.in-gallery .leaflet-marker-pane,
   body.in-gallery .leaflet-shadow-pane,
   body.in-gallery .leaflet-tile-pane { display: none; }
@@ -1149,7 +1149,7 @@
   .leaflet-marker-pane,
   .leaflet-shadow-pane,
   .leaflet-tile-pane,
-  .leaflet-countryPane-pane,
+  .country-pane,
   #hwToggle {
     transition: opacity 0.7s ease;
   }
@@ -1157,7 +1157,7 @@
   body.flying-home .leaflet-marker-pane,
   body.flying-home .leaflet-shadow-pane,
   body.flying-home .leaflet-tile-pane,
-  body.flying-home .leaflet-countryPane-pane,
+  body.flying-home .country-pane,
   body.flying-home #hwToggle {
     opacity: 0;
     transition: opacity 0.2s ease;
@@ -4584,6 +4584,7 @@ window.addEventListener("resize", () => applyVerticalFit(false));
 map.createPane("countryPane");
 map.getPane("countryPane").style.zIndex = 350;
 map.getPane("countryPane").style.pointerEvents = "none";
+map.getPane("countryPane").classList.add("country-pane");
 
 // ───────────── SAMPLE ART (left-side extra space) ─────────────
 // 50-frame salon hang: 10 columns × 5 rows, centered at (lat 0, lng -450)
