@@ -10653,13 +10653,26 @@ function buildCastSection(msg, wrap) {
   pane.classList.add("museum-stars-pane");
 
   // Stars scattered across a band wider/taller than the wall so the
-  // sky reads as ambient even when the visitor pans a little.
-  const STAR_COUNT = 120;
-  const LAT_HALF = 70;
-  const LNG_HALF = 160;
+  // sky reads as ambient even when the visitor pans a little. Stars
+  // that land inside the wall's bounding box (with a small margin)
+  // are re-rolled, so density is highest around and outside the wall
+  // rather than blocked by the frames.
+  const STAR_COUNT = 180;
+  const LAT_HALF   = 85;
+  const LNG_HALF   = 200;
+  const WALL_LAT_MARGIN = halfGridH + 6;
+  const WALL_LNG_MARGIN = halfGridW + 6;
   for (let i = 0; i < STAR_COUNT; i++) {
-    const lat = (Math.random() * 2 - 1) * LAT_HALF;
-    const lng = GRID_CENTER_LNG + (Math.random() * 2 - 1) * LNG_HALF;
+    let lat, lng, tries = 0;
+    do {
+      lat = (Math.random() * 2 - 1) * LAT_HALF;
+      lng = GRID_CENTER_LNG + (Math.random() * 2 - 1) * LNG_HALF;
+      tries++;
+    } while (
+      tries < 8 &&
+      Math.abs(lat) < WALL_LAT_MARGIN &&
+      Math.abs(lng - GRID_CENTER_LNG) < WALL_LNG_MARGIN
+    );
     // Most stars are 1px, a quarter 2px, a few 3px — varied weight
     // feels less mechanical than uniform dots.
     const r = Math.random();
