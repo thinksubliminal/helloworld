@@ -1171,7 +1171,9 @@
   #backToMapBtn {
     position: absolute;
     top: 8px;
-    left: 50%;
+    /* Shifted left of true center so the combined pair (back-to-map +
+       submit-work to its right) feels page-centered, not just the pill. */
+    left: calc(50% - 65px);
     height: 58px;
     padding: 0 18px 0 22px;
     border-radius: 50px;
@@ -1221,7 +1223,7 @@
   #submitLink {
     position: absolute;
     top: 50%;
-    left: calc(50% + 110px);
+    left: calc(50% + 45px);
     transform: translateY(-50%);
     font-family: inherit;
     font-size: 11px;
@@ -1247,6 +1249,11 @@
   /* Narrow viewports: sit ABOVE the back-to-map pill (the toolbar is
      pinned to the bottom of the viewport, so "below" runs off-screen). */
   @media (max-width: 600px) {
+    /* Narrow viewports stack: submit-work above, back-to-map below.
+       Both center-aligned to the page since they're vertically stacked. */
+    #backToMapBtn {
+      left: 50%;
+    }
     #submitLink {
       top: auto;
       bottom: calc(100% + 14px);
@@ -1836,6 +1843,47 @@
   body.gallery-trip .gallery-frame {
     opacity: 0;
     transition-duration: 0.18s;
+  }
+
+  /* Museum placard — quiet line of text floating above the frames,
+     visible only while the visitor is inside the gallery. Sits below
+     the top nav; fades in slightly after the frames materialize so
+     the wall is the first thing the visitor sees. */
+  #museumPlacard {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 600;
+    max-width: 460px;
+    padding: 0 24px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+    line-height: 1.65;
+    letter-spacing: 0.02em;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.32s ease;
+  }
+  body.in-gallery #museumPlacard {
+    opacity: 1;
+    transition: opacity 0.32s ease 0.35s;
+  }
+  /* Zoomed-in visitor is inspecting a frame; placard fades out so it
+     doesn't crowd the artwork. */
+  body.in-gallery.gallery-zoomed #museumPlacard {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  /* Panned far enough that no frames are in view — dim the chrome to
+     a low-attention 0.3 so the empty wall feels less cluttered without
+     hiding the back-to-map exit entirely. Buttons stay clickable. */
+  body.in-gallery.frames-offscreen #museumPlacard,
+  body.in-gallery.frames-offscreen #bottomActions.gallery-mode #backToMapBtn,
+  body.in-gallery.frames-offscreen #bottomActions.gallery-mode #submitLink {
+    opacity: 0.3;
+    transition: opacity 0.35s ease;
   }
 
   /* Draw mode — full-screen single-tile canvas + bottom toolbar.
@@ -3380,6 +3428,10 @@
   <div class="gallery-hint">tap to close</div>
 </div>
 
+<div id="museumPlacard" aria-hidden="true">
+  A small wall in a quiet corner of the world. If you&rsquo;ve made something, send it in.
+</div>
+
 <div id="compose" role="dialog" aria-modal="true">
   <div class="compose-card">
     <div class="compose-loc" id="composeLoc">somewhere</div>
@@ -4812,10 +4864,27 @@ const elMuseumBtn     = document.getElementById("museumBtn");
 const elBackToMapBtn  = document.getElementById("backToMapBtn");
 const GALLERY_LNG_THRESHOLD = -180;
 
+// Bounding box of the wall of frames. Used to dim the chrome when the
+// visitor has panned far enough that no frames are in view. Padded a
+// hair so the toggle doesn't snap right at the wall's edge.
+const GALLERY_BOUNDS = L.latLngBounds(
+  [GRID_CENTER_LAT - halfGridH - 2, leftCol - COL_PITCH / 2 - 2],
+  [GRID_CENTER_LAT + halfGridH + 2, leftCol + (GRID_COLS - 1) * COL_PITCH + COL_PITCH / 2 + 2]
+);
+
 function updateGalleryMode() {
   const inGallery = map.getCenter().lng < GALLERY_LNG_THRESHOLD;
   elBottomActions.classList.toggle("gallery-mode", inGallery);
   document.body.classList.toggle("in-gallery", inGallery);
+  // Hide the museum placard once the visitor zooms in past the default
+  // — they're inspecting a frame, not reading museum copy. 0.3 of
+  // hysteresis avoids flicker right at the threshold.
+  document.body.classList.toggle("gallery-zoomed", map.getZoom() > INITIAL_ZOOM + 0.3);
+  // Dim chrome when the visitor has panned far enough that no frames
+  // are in the viewport — same physical space, but no museum context
+  // to anchor the buttons against.
+  const framesOffscreen = inGallery && !map.getBounds().intersects(GALLERY_BOUNDS);
+  document.body.classList.toggle("frames-offscreen", framesOffscreen);
 }
 map.on("move", updateGalleryMode);
 updateGalleryMode();
