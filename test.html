@@ -1168,8 +1168,11 @@
     transition: opacity 0.2s ease;
   }
   /* Symmetric to flying-home: when the visitor clicks the museum
-     button, fade out the world (NOT the overlay pane, which holds the
-     museum frames) over the first ~0.55s of the trip. */
+     button, fade out the world AND the frames over the first ~0.55s
+     of the trip. Stars provide the sense of motion during the flight;
+     frames materialize on arrival when leaving-earth is removed and
+     the base transition (0.7s) fades them back in. */
+  body.leaving-earth .leaflet-overlay-pane,
   body.leaving-earth .leaflet-marker-pane,
   body.leaving-earth .leaflet-shadow-pane,
   body.leaving-earth .leaflet-tile-pane,
