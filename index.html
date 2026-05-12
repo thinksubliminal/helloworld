@@ -1833,18 +1833,6 @@
   .gallery-frame:active {
     filter: drop-shadow(0 0 14px rgba(245, 210, 130, 0.6));
   }
-  /* During a flyTo between the main map and the gallery, hide the 50
-     frame overlays so they're not continuously re-projecting through
-     the zoom curve (which makes the landing feel rough). They fade
-     back in on arrival via the .gallery-frame opacity transition.
-     Fade-out during trip start is faster (0.18s) so leaving the
-     gallery doesn't feel sluggish — fade-in on arrival is slower
-     (0.45s) so the wall reveals itself with weight. */
-  body.gallery-trip .gallery-frame {
-    opacity: 0;
-    transition-duration: 0.18s;
-  }
-
   /* Museum placard — quiet line of text floating above the frames,
      visible only while the visitor is inside the gallery. Sits below
      the top nav; fades in slightly after the frames materialize so
@@ -1862,9 +1850,10 @@
     padding: 0;
     text-align: center;
     color: rgba(255, 255, 255, 0.5);
-    font-size: 12px;
-    line-height: 1.65;
-    letter-spacing: 0.02em;
+    /* Sized to match the "hello, world" title in the rules modal. */
+    font-size: 22px;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.32s ease;
@@ -4895,23 +4884,15 @@ updateGalleryMode();
 // Museum button flies to the gallery's center; back-to-map flies home.
 // Leaflet's flyTo uses a Van Wijk trajectory (zoom out, pan, zoom in)
 // so visitors get a sense of traveling across the same world rather
-// than teleporting. Lightbox is dismissed first on the return trip so
-// the animation isn't masked by the overlay.
-function travelToMapPoint(latlng, duration) {
-  // Hide the gallery frames during the flyTo so they don't stutter
-  // through the zoom curve, then fade them back in on arrival.
-  document.body.classList.add("gallery-trip");
-  map.flyTo(latlng, INITIAL_ZOOM, { duration, easeLinearity: 0.7 });
-  map.once("moveend", () => {
-    document.body.classList.remove("gallery-trip");
-  });
-}
+// than teleporting. Plain flyTo, no chrome fades — preferred for the
+// raw "same world" feeling over the earlier hide-frames-during-trip
+// version.
 elMuseumBtn.addEventListener("click", () => {
-  travelToMapPoint([GRID_CENTER_LAT, GRID_CENTER_LNG], 2.0);
+  map.flyTo([GRID_CENTER_LAT, GRID_CENTER_LNG], INITIAL_ZOOM);
 });
 elBackToMapBtn.addEventListener("click", () => {
   if (elGalleryLightbox.classList.contains("open")) closeGalleryLightbox();
-  travelToMapPoint(INITIAL_CENTER, 1.7);
+  map.flyTo(INITIAL_CENTER, INITIAL_ZOOM);
 });
 
 // ───────────── COUNTRY GEOJSON ─────────────
