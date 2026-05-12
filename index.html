@@ -4916,6 +4916,9 @@ elMuseumBtn.addEventListener("click", () => {
 });
 elBackToMapBtn.addEventListener("click", () => {
   if (elGalleryLightbox.classList.contains("open")) closeGalleryLightbox();
+  // Reset the bird simulation so in-flight birds don't pop back in
+  // mid-screen when the canvas un-hides during the trip back.
+  if (typeof window.__resetBirdFlock === "function") window.__resetBirdFlock();
   map.flyTo(INITIAL_CENTER, INITIAL_ZOOM);
 });
 
@@ -11017,6 +11020,20 @@ function buildCastSection(msg, wrap) {
   // could bounce; then a steady ~one-minute cadence after that.
   nextSpawnTimer = setTimeout(() => { spawnFlock(); scheduleNext(); },
              1000 + Math.random() * 4000);
+
+  // Reset hook for travel transitions. Birds are hidden via CSS while
+  // the visitor is in the museum (display:none on the canvas), but the
+  // simulation keeps running. When they fly back to earth, mid-flight
+  // birds would otherwise pop back in halfway across the screen — reads
+  // as "birds appear weird." Calling this clears the in-flight birds
+  // and re-arms the spawn timer so the next flock enters naturally
+  // from off-screen.
+  window.__resetBirdFlock = () => {
+    birds.length = 0;
+    if (nextSpawnTimer) clearTimeout(nextSpawnTimer);
+    nextSpawnTimer = setTimeout(() => { spawnFlock(); scheduleNext(); },
+      1000 + Math.random() * 4000);
+  };
 
   // If the visitor drags the window onto a wide display (laptop →
   // external 5K, fullscreen on a 4K, etc.) after birds have already
