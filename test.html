@@ -1128,7 +1128,8 @@
      is irrelevant inside the museum. */
   body.in-gallery #resetTimer,
   body.in-gallery #hint,
-  body.in-gallery #dropPrompt { display: none; }
+  body.in-gallery #dropPrompt,
+  body.in-gallery #birdCanvas { display: none; }
   /* Modals open while in the gallery need a darker/blurrier backdrop —
      the default 0.55 / blur(3px) is calibrated for the navy map and
      lets the warm-toned art frames bleed through too brightly. */
@@ -4889,8 +4890,11 @@ updateGalleryMode();
 // than teleporting. Plain flyTo, no chrome fades — preferred for the
 // raw "same world" feeling over the earlier hide-frames-during-trip
 // version.
+// Landing zoom is INITIAL_ZOOM - 0.5 so the full 10×5 wall fits with
+// breathing room above and below, instead of landing pressed-in.
+const MUSEUM_LANDING_ZOOM = INITIAL_ZOOM - 0.5;
 elMuseumBtn.addEventListener("click", () => {
-  map.flyTo([GRID_CENTER_LAT, GRID_CENTER_LNG], INITIAL_ZOOM);
+  map.flyTo([GRID_CENTER_LAT, GRID_CENTER_LNG], MUSEUM_LANDING_ZOOM);
 });
 elBackToMapBtn.addEventListener("click", () => {
   if (elGalleryLightbox.classList.contains("open")) closeGalleryLightbox();
