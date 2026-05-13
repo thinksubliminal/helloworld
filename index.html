@@ -2630,7 +2630,7 @@
         <polygon points="12,1 13.5,10.5 23,12 13.5,13.5 12,23 10.5,13.5 1,12 10.5,10.5" fill="currentColor"/>
       </svg>
     </button>
-    <button id="museumBtn" type="button" aria-label="enter the museum">
+    <button id="museumBtn" type="button" aria-label="enter space">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 2 C 15 4, 16 9, 16 13 L 16 16 L 8 16 L 8 13 C 8 9, 9 4, 12 2 Z"/>
         <path d="M 8 13 L 4 18 L 8 17"/>
@@ -7933,6 +7933,17 @@ function hideAimLabel() {
   if (aimLabelEl) aimLabelEl.classList.remove("show");
 }
 
+// Star aim label — fixed copy ("in space") that tracks the finger/cursor.
+// Stars don't have a city/ocean to name, but the label still needs to
+// move so press-and-hold reads as a live aim instead of a dead press.
+function updateStarAimLabel(clientX, clientY) {
+  if (!aimLabelEl) return;
+  aimLabelEl.textContent = "in space";
+  aimLabelEl.style.left = clientX + "px";
+  aimLabelEl.style.top = clientY + "px";
+  aimLabelEl.classList.add("show");
+}
+
 function enterFlarePlacementMode() {
   flarePlacementMode = true;
   document.body.classList.add("flare-placing");
@@ -8615,10 +8626,7 @@ starBtn.addEventListener("click", requestStar);
 if (IS_HOVER_DEVICE) {
   map.on("mousemove", (e) => {
     if (!starPlacementMode) return;
-    // Aim label off in star mode — "in space" everywhere isn't informative.
-    // Keep just the crosshair cursor cue from .flare-placing.
-    hideAimLabel();
-    e; // unused
+    updateStarAimLabel(e.originalEvent.clientX, e.originalEvent.clientY);
   });
   map.on("click", (e) => {
     if (!starPlacementMode) return;
@@ -8638,7 +8646,11 @@ if (!IS_HOVER_DEVICE) {
 
   function starPointFromTouch(touch) {
     const rect = mapEl.getBoundingClientRect();
-    return L.point(touch.clientX - rect.left, touch.clientY - rect.top);
+    return {
+      point: L.point(touch.clientX - rect.left, touch.clientY - rect.top),
+      clientX: touch.clientX,
+      clientY: touch.clientY
+    };
   }
 
   mapEl.addEventListener("touchstart", (e) => {
@@ -8647,15 +8659,17 @@ if (!IS_HOVER_DEVICE) {
     e.preventDefault();
     starTouchAiming = true;
     document.body.classList.add("flare-aiming-active");
-    const point = starPointFromTouch(e.touches[0]);
+    const { point, clientX, clientY } = starPointFromTouch(e.touches[0]);
     starLastAimLatLng = map.containerPointToLatLng(point);
+    updateStarAimLabel(clientX, clientY);
   }, { passive: false });
 
   mapEl.addEventListener("touchmove", (e) => {
     if (!starPlacementMode || !starTouchAiming) return;
     e.preventDefault();
-    const point = starPointFromTouch(e.touches[0]);
+    const { point, clientX, clientY } = starPointFromTouch(e.touches[0]);
     starLastAimLatLng = map.containerPointToLatLng(point);
+    updateStarAimLabel(clientX, clientY);
   }, { passive: false });
 
   mapEl.addEventListener("touchend", () => {
