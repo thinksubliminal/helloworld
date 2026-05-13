@@ -1235,6 +1235,34 @@
     }
   }
 
+  /* "coming soon" label above the gallery wall — quiet text that
+     surfaces only in gallery mode, sitting under #topNav. Matches the
+     same fade-in-on-arrival / fade-out-on-exit pattern as #submitLink
+     and #backToMapBtn. Top center of the viewport reads as "above the
+     frames" since the gallery occupies the central band. */
+  #galleryComingSoon {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 700;
+    transition: opacity 0.18s ease;
+  }
+  body.in-gallery #galleryComingSoon {
+    opacity: 1;
+    transition: opacity 0.32s ease 0.42s;
+  }
+  body.leaving-earth #galleryComingSoon { opacity: 0; }
+
   /* Pulsing dot inside the + button — reuses the same @keyframes pulse the
      map dots use so the button visually previews what it does. */
   .drop-dot {
@@ -2505,6 +2533,7 @@
     </button>
     <a id="submitLink" href="https://forms.gle/eQMkUrdNEjJKwFN99" target="_blank" rel="noopener" aria-label="submit work to the museum">submit work</a>
   </div>
+  <div id="galleryComingSoon" aria-hidden="true">coming soon</div>
 </div>
 <script>
 /* Pre-paint the flare button in its correct locked-vs-resting state
