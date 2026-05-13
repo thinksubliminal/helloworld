@@ -37,6 +37,6 @@ SELECT cron.schedule(
     FROM tiles
     ON CONFLICT (day, tile_index) DO NOTHING;
 
-    TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims, tiles;
+    TRUNCATE TABLE reports, tile_reports, casts, cast_turns, flare_responses, flares, message_responses, messages, chest_claims, tiles;
   $$
 );

@@ -3413,7 +3413,7 @@
         <span class="help-icon-dot" aria-hidden="true"></span>
         <span>Dots</span>
       </div>
-      <div class="help-section-body">Drop one per day at your exact location. Say something to the world — how you feel, what you're thinking, anything.</div>
+      <div class="help-section-body">Drop one per day at your exact location. Say something to the world — how you feel, what you're thinking, anything. Anyone can reply in short bursts. No back-to-back from the same person — wait for someone else to chime in.</div>
     </div>
     <div class="help-section">
       <div class="help-section-header">
@@ -3423,16 +3423,6 @@
         <span>Flares</span>
       </div>
       <div class="help-section-body">Aim one anywhere on the map. Anyone on that continent can chime in. The thread closes once enough has been said. One flare per day.</div>
-    </div>
-    <div class="help-section">
-      <div class="help-section-header">
-        <svg class="help-icon-cast" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
-          <circle cx="32" cy="32" r="26" stroke-width="5" pathLength="80" stroke-dasharray="3 7"/>
-          <circle cx="32" cy="32" r="9" fill="currentColor" stroke="none"/>
-        </svg>
-        <span>Cast</span>
-      </div>
-      <div class="help-section-body">Reach across the ocean. Open any dot from another continent that hasn't been cast to yet and trade short replies with them. One cast per day.</div>
     </div>
     <div class="help-section">
       <div class="help-section-header">
@@ -3567,10 +3557,12 @@ if (IS_DEV_MODE) {
   );
 }
 
-// Cast feature flag. Now default-on for all visitors. `?cast=0` is
-// kept as an emergency kill switch — visit dropadot.world/?cast=0 if
-// the feature ever needs to be turned off without a code change.
-const IS_CAST_ENABLED = new URLSearchParams(location.search).get("cast") !== "0";
+// Cast feature flag. Default-OFF as of the dot-threading migration —
+// dot reply threads replace cast as the primary back-and-forth surface.
+// `?cast=1` revives the feature for testing without a code change; all
+// cast code, tables, and RPCs remain in place pending a future decision
+// on full removal.
+const IS_CAST_ENABLED = new URLSearchParams(location.search).get("cast") === "1";
 
 // ───────────── SUPABASE ─────────────
 const SUPABASE_URL = "https://sxofvadbeznwgctdzbmk.supabase.co";
@@ -3590,6 +3582,8 @@ function rowToMsg(row, mineIds) {
     mood: row.mood,
     mine: mineIds.has(row.id),
     continent: row.continent || continentFromLatLng(row.lat, row.lng),
+    planter_id: row.planter_id || null,
+    responses: [],
     // Used by the Heard panel to weight selection toward recent messages.
     created_at: row.created_at || null
   };
@@ -6028,7 +6022,198 @@ function buildPopup(msg) {
   // gated behind IS_CAST_ENABLED — no-op when the feature flag is off.
   buildCastSection(msg, wrap);
 
+  // Reply thread. Mirrors the flare thread pattern (50 chars per reply,
+  // 500 chars total shared budget) but with no continent gate and a
+  // no-back-to-back rule. The dot author cannot post the first reply.
+  // Reuses .flare-popup-* CSS classes so the visual treatment matches.
+  appendDotThread(msg, wrap);
+
   return wrap;
+}
+
+// Append the reply thread + respond UI to a dot popup. Reuses flare
+// popup CSS classes — same visual treatment for both surfaces.
+function appendDotThread(msg, wrap) {
+  const responses = (msg.responses || []).slice().sort((a, b) => {
+    return (a.created_at || "").localeCompare(b.created_at || "");
+  });
+  const usedChars = responses.reduce(
+    (sum, r) => sum + ((r && r.text) ? r.text.length : 0), 0
+  );
+  const remaining = Math.max(0, 500 - usedChars);
+  const isFull = remaining <= 0;
+  const lastResponderId = responses.length > 0
+    ? responses[responses.length - 1].responder_id
+    : null;
+  const iAmLastSpeaker = lastResponderId === PLANTER_ID;
+  const isMine = msg.mine === true || msg.planter_id === PLANTER_ID;
+  // Owner can't post the first reply — when there are no replies yet,
+  // the owner is treated as the implicit "last voice."
+  const ownerLockedFirst = isMine && responses.length === 0;
+  const canRespond =
+    hasDroppedToday() &&
+    !isFull &&
+    !iAmLastSpeaker &&
+    !ownerLockedFirst;
+  const replyMax = Math.min(50, remaining);
+
+  const target = getCurrentLang();
+  const wantTranslate = target && target !== "off";
+  const optimistic = (text) => {
+    if (!wantTranslate || !text) return text || "";
+    return getTranslatedNow(text, target) || text;
+  };
+
+  let html = "";
+
+  if (responses.length > 0) {
+    html +=
+      `<div class="flare-popup-divider"></div>` +
+      `<div class="flare-popup-response-list-wrap">` +
+        `<div class="flare-popup-response-list">`;
+    for (const r of responses) {
+      html += `<div class="flare-popup-response">${escapeHtml(optimistic(r.text))}</div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  if (canRespond) {
+    html +=
+      `<div class="flare-popup-divider"></div>` +
+      `<div class="flare-popup-respond-area">` +
+        `<textarea data-dot-respond maxlength="${replyMax}" placeholder="say something back..."></textarea>` +
+        `<div class="flare-popup-respond-actions">` +
+          `<span class="flare-popup-counter" data-dot-counter>${replyMax}</span>` +
+          `<button class="flare-btn-primary" data-dot-send disabled>respond</button>` +
+        `</div>` +
+        `<div class="flare-popup-error" data-dot-error hidden></div>` +
+      `</div>` +
+      `<div class="flare-popup-budget">${remaining} of 500 left in this thread</div>`;
+  } else if (isFull) {
+    html += `<div class="flare-popup-divider"></div><div class="flare-popup-locked">this conversation is closed.</div>`;
+  } else if (ownerLockedFirst) {
+    html += `<div class="flare-popup-divider"></div><div class="flare-popup-locked">waiting for replies…</div>`;
+  } else if (iAmLastSpeaker) {
+    html += `<div class="flare-popup-divider"></div><div class="flare-popup-locked">wait for someone else to reply.</div>`;
+  } else if (!hasDroppedToday()) {
+    html += `<div class="flare-popup-divider"></div><div class="flare-popup-locked">drop a dot first to reply.</div>`;
+  }
+
+  if (!html) return;
+
+  const threadContainer = document.createElement("div");
+  threadContainer.innerHTML = html;
+  while (threadContainer.firstChild) {
+    wrap.appendChild(threadContainer.firstChild);
+  }
+
+  // Async translation pass for existing replies.
+  if (wantTranslate && responses.length > 0) {
+    const respEls = wrap.querySelectorAll(".flare-popup-response");
+    responses.forEach((r, i) => {
+      const el = respEls[i];
+      if (!el || !r || !r.text) return;
+      const already = getTranslatedNow(r.text, target);
+      if (already) return;
+      translate(r.text, target).then((t) => {
+        if (!t || !t.trim()) return;
+        if (!el.isConnected || getCurrentLang() !== target) return;
+        if (el.textContent === t) return;
+        el.textContent = t;
+        const dm = dotMarkers.get(msg.id);
+        const p = dm && dm.getPopup && dm.getPopup();
+        if (p && p.update) p.update();
+      });
+    });
+  }
+
+  const ta = wrap.querySelector("[data-dot-respond]");
+  const sendBtn = wrap.querySelector("[data-dot-send]");
+  const counter = wrap.querySelector("[data-dot-counter]");
+  const errEl = wrap.querySelector("[data-dot-error]");
+  if (ta && sendBtn && counter) {
+    const sync = () => {
+      const len = ta.value.length;
+      counter.textContent = String(replyMax - len);
+      counter.classList.toggle("over", len > replyMax);
+      sendBtn.disabled = !(len > 0 && len <= replyMax);
+      if (errEl && !errEl.hidden) { errEl.hidden = true; errEl.textContent = ""; }
+    };
+    ta.addEventListener("input", sync);
+    sendBtn.addEventListener("click", async () => {
+      const text = ta.value.trim();
+      if (!text || text.length > replyMax) return;
+      sendBtn.disabled = true;
+      const ok = await respondToDot(msg.id, text, errEl);
+      if (!ok) sendBtn.disabled = false;
+    });
+  }
+}
+
+// Public dot thread, 500-char shared budget, 50-char per reply, no
+// back-to-back from the same device, dot author can't post first.
+// The DB enforces all of this atomically via insert_message_response:
+//   - P0001 reply_invalid_length → reply outside 1..50 chars
+//   - P0002 thread_full          → would exceed the 500-char budget
+//   - P0003 back_to_back         → same device replying twice in a row
+//   - P0004 owner_first          → dot author trying to open the thread
+async function respondToDot(messageId, text, errEl) {
+  const blocked = checkContentBlocks(text);
+  if (blocked) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = blocked;
+    }
+    return false;
+  }
+  try {
+    const { data, error } = await sb
+      .rpc("insert_message_response", {
+        p_message_id: messageId,
+        p_responder_id: PLANTER_ID,
+        p_text: sanitizeProfanity(text)
+      })
+      .single();
+
+    if (error) {
+      if (errEl) {
+        errEl.hidden = false;
+        if (error.code === "P0002" || /thread_full/i.test(error.message || "")) {
+          errEl.textContent = "this conversation is closed.";
+        } else if (error.code === "P0003" || /back_to_back/i.test(error.message || "")) {
+          errEl.textContent = "wait for someone else to reply first.";
+        } else if (error.code === "P0004" || /owner_first/i.test(error.message || "")) {
+          errEl.textContent = "wait for someone else to reply first.";
+        } else if (error.code === "P0001" || /reply_invalid_length/i.test(error.message || "")) {
+          errEl.textContent = "reply must be 1–50 characters.";
+        } else {
+          errEl.textContent = "couldn't send. check your connection.";
+        }
+      }
+      return false;
+    }
+    if (!data) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "couldn't send. check your connection.";
+      }
+      return false;
+    }
+
+    const m = messages.find(mm => mm.id === messageId);
+    if (m) {
+      if (!m.responses) m.responses = [];
+      if (!m.responses.some(r => r.id === data.id)) m.responses.push(data);
+    }
+    refreshOpenDotPopup(messageId);
+    return true;
+  } catch (e) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = "couldn't send. check your connection.";
+    }
+    return false;
+  }
 }
 
 function rebuildDots() {
@@ -6995,7 +7180,8 @@ async function submit() {
       lng: Math.round(ll.lng * 1000) / 1000,
       loc,
       mood: selectedMood,
-      continent
+      continent,
+      planter_id: PLANTER_ID
     })
     .select()
     .single();
@@ -7015,6 +7201,8 @@ async function submit() {
     mood: data.mood,
     mine: true,
     continent: data.continent || continent,
+    planter_id: data.planter_id || PLANTER_ID,
+    responses: [],
     created_at: data.created_at || new Date().toISOString()
   };
 
@@ -9496,7 +9684,7 @@ function buildCastSection(msg, wrap) {
     try {
       const { data, error } = await sb
         .from("messages")
-        .select("id, text, lat, lng, loc, mood, created_at, continent")
+        .select("id, text, lat, lng, loc, mood, created_at, continent, planter_id")
         .gte("created_at", todayMidnightUTC())
         .order("created_at", { ascending: true });
       if (error) console.warn("[supabase] initial fetch failed:", error.message);
@@ -9588,6 +9776,33 @@ function buildCastSection(msg, wrap) {
     }
   }
 
+  // Message responses — only relevant if there are messages to attach to.
+  if (messages.length > 0) {
+    let dotRespRows = bundle?.message_responses ?? null;
+    if (dotRespRows == null) {
+      try {
+        const { data, error } = await sb
+          .from("message_responses")
+          .select("id, message_id, responder_id, text, created_at")
+          .gte("created_at", todayMidnightUTC())
+          .order("created_at", { ascending: true });
+        if (error) console.warn("[supabase] message responses fetch failed:", error.message);
+        else dotRespRows = data;
+      } catch (e) {
+        console.warn("[supabase] message responses fetch threw:", e);
+      }
+    }
+    if (Array.isArray(dotRespRows)) {
+      const msgById = new Map(messages.map(m => [m.id, m]));
+      for (const r of dotRespRows) {
+        const m = msgById.get(r.message_id);
+        if (!m) continue;
+        if (!m.responses) m.responses = [];
+        m.responses.push(r);
+      }
+    }
+  }
+
   // No translation pre-warming at boot — popups translate on-demand when the
   // user actually opens them. Removed 2026-05-03; see comment above
   // `pretranslateAll`'s old definition site for context.
@@ -9663,6 +9878,15 @@ function buildCastSection(msg, wrap) {
     refreshFlareMarkerStyle(f);
     return true;
   }
+  function applyMessageResponseRow(row) {
+    if (!row || !row.id) return false;
+    const m = messages.find(x => x.id === row.message_id);
+    if (!m) return false;
+    if (!m.responses) m.responses = [];
+    if (m.responses.some(r => r.id === row.id)) return false;
+    m.responses.push(row);
+    return true;
+  }
 
   // If a flare's popup is currently open and a new response just landed,
   // rebuild its content so the user sees the new reply without having to
@@ -9693,13 +9917,16 @@ function buildCastSection(msg, wrap) {
     try {
       const queries = [
         sb.from("messages")
-          .select("id, text, lat, lng, loc, mood, created_at, continent")
+          .select("id, text, lat, lng, loc, mood, created_at, continent, planter_id")
           .gt("created_at", since).order("created_at", { ascending: true }),
         sb.from("flares")
           .select("id, text, lat, lng, loc, continent, planter_id, planter_loc, created_at")
           .gt("created_at", since).order("created_at", { ascending: true }),
         sb.from("flare_responses")
           .select("id, flare_id, responder_id, text, created_at")
+          .gt("created_at", since).order("created_at", { ascending: true }),
+        sb.from("message_responses")
+          .select("id, message_id, responder_id, text, created_at")
           .gt("created_at", since).order("created_at", { ascending: true }),
         // Chest claim for the current UTC hour. Single row at most;
         // `maybeSingle` returns `data: null` cleanly when unclaimed.
@@ -9725,7 +9952,7 @@ function buildCastSection(msg, wrap) {
         );
       }
       const results = await Promise.all(queries);
-      const [m, f, r, c, castResult, castTurnsResult] = results;
+      const [m, f, r, mr, c, castResult, castTurnsResult] = results;
       let touched = false;
       let maxSeen = since;
       if (Array.isArray(m.data)) {
@@ -9744,6 +9971,12 @@ function buildCastSection(msg, wrap) {
         for (const row of r.data) {
           if (row.created_at && row.created_at > maxSeen) maxSeen = row.created_at;
           if (applyFlareResponseRow(row)) refreshOpenFlarePopup(row.flare_id);
+        }
+      }
+      if (mr && Array.isArray(mr.data)) {
+        for (const row of mr.data) {
+          if (row.created_at && row.created_at > maxSeen) maxSeen = row.created_at;
+          if (applyMessageResponseRow(row)) refreshOpenDotPopup(row.message_id);
         }
       }
       // Apply cast updates: new casts render new lines, answered casts
