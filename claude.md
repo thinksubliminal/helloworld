@@ -316,6 +316,85 @@ create policy "anyone can insert flare responses" on flare_responses
 ### Dev
 - Console: `resetMyFlare()` clears today's flare lock.
 
+## Stars (space realm)
+A fourth interaction type that lives in the "space" view (the museum's
+gallery longitude band, around `lng = -450`). Frames are turned off
+(`SHOW_GALLERY_FRAMES = false` in `index.html`) so the wall is empty —
+the space is for stars and stars only. Tap the rocket icon to travel
+to the museum, then tap the white-star toolbar button to enter aim
+mode, then click anywhere on the map to plant a star with a 100-char
+question. Other space-dwellers reply 50 chars at a time, atomic
+500-char total budget per thread.
+
+### Gates
+- **Planting requires NO dot today.** Anyone can plant a star.
+  Reflects the "away from earth's problems" framing — space is
+  decoupled from earth's rules.
+- **Replying requires the visitor to have planted a star today.**
+  Parallel to dots-need-a-dot, but using stars-need-a-star. You're
+  a "space-dweller" only after planting your own.
+- 1 star per day per device (`localStorage.hw-user-stars`, mirrors
+  the flare daily-lock shape).
+- **No back-to-back replies** from the same device on a single star.
+- **Star author can't post the first reply** on their own star.
+- Both rules enforced atomically in the `insert_star_response` RPC.
+
+### Tables
+- `stars (id, text, lat, lng, planter_id, created_at)`. No continent
+  or `loc` columns — there's no continent in space, and the planter's
+  GPS isn't captured. 100-char CHECK constraint on `text`.
+- `star_responses (id, star_id, responder_id, text, created_at)`.
+  1–50 char CHECK on `text`, mirrors `message_responses` and
+  `flare_responses`. SELECT public; INSERT must go through the RPC.
+
+### RPC — `insert_star_response(uuid, text, text)`
+Mirrors `insert_message_response` exactly. Locks the parent `stars`
+row with `SELECT ... FOR UPDATE`, sums existing response lengths,
+applies all three guards:
+- P0001 reply_invalid_length → reply outside 1..50 chars
+- P0002 thread_full → would push past the 500-char budget
+- P0003 back_to_back → same `responder_id` as the most recent reply
+- P0004 owner_first → empty thread + responder is the star's planter
+
+### Visual identity
+- White 5-point SVG star marker, same two-stack drop-shadow recipe
+  the chest uses but in white (`drop-shadow(0 0 2px white@0.55) +
+  drop-shadow(0 0 9px white@0.22)`). Mine variant uses stronger
+  drop-shadows for "this is yours" recognition.
+- Markers live in a **custom Leaflet pane** named `stars`, created
+  via `map.createPane('stars')`. The pane gets class
+  `leaflet-stars-pane` which is opacity 0 by default and opacity 1
+  under `body.in-gallery`. This makes stars exclusive to the space
+  realm — they don't bleed onto earth and don't get hidden by the
+  same in-gallery rule that fades out earthly markers.
+- Toolbar button `#starBtn` sits to the right of `#backToMapBtn` in
+  gallery mode (replaced the old submit-work link). White tint, white
+  drop-shadow glow, locked-state styling when planted today.
+
+### Boot + polling
+- Boot: direct Supabase SELECT for `stars` + `star_responses` on the
+  current UTC day. The Cloudflare Worker's `loadAll` bundle does NOT
+  carry stars yet — the boot does a `bundle?.stars ?? null` check,
+  falls into direct Supabase if absent. Update the worker to bundle
+  these later for the egress savings.
+- Polling: `stars` and `star_responses` added to `pollOnce()`'s
+  incremental SELECT batch alongside the existing tables. New star
+  popups refresh in place via `refreshOpenStarPopup`.
+
+### Daily reset
+- `stars` and `star_responses` added to the midnight UTC TRUNCATE
+  in `cron.sql`. Same wipe pattern as everything else.
+
+### Toggle frames back on
+- Set `SHOW_GALLERY_FRAMES = true` (single constant near the
+  `renderGallery` IIFE in `index.html`) and the wall returns. The
+  star feature works independently; both can coexist once we want
+  them to.
+
+### Dev
+- Console (dev mode only): `resetMyStar()` clears today's star
+  lock so a new star can be planted from the same browser.
+
 ## Heard Around the World panel
 - Bottom-left frosted-glass card showing a rotating selection of dots,
   sampled with a **random-weighted-recent** algorithm (newer dots more

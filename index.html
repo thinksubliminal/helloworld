@@ -1144,8 +1144,9 @@
   #backToMapBtn {
     position: absolute;
     top: 8px;
-    /* Shifted left of true center so the combined pair (back-to-map +
-       submit-work to its right) feels page-centered, not just the pill. */
+    /* Shifted left of true center so the combined pair (back-to-map
+       pill + star button to its right) feels page-centered, not just
+       the pill. */
     left: calc(50% - 65px);
     height: 58px;
     padding: 0 18px 0 22px;
@@ -1189,56 +1190,94 @@
                 border-color 0.15s ease;
   }
 
-  /* Submit-work link — quiet text link surfacing only in gallery mode,
-     sitting to the right of the back-to-map pill. Sends artists to a
-     Google Form for submissions. Update the href on #submitLink to
-     point at the real form URL once it exists. */
-  #submitLink {
+  /* Star button — circle that surfaces only in gallery mode, sitting
+     to the right of the back-to-map pill. Tapping it enters star-
+     placement mode (aim + click anywhere in space to drop a star).
+     White tint + subtle white glow mirrors the chest's amber recipe
+     but in the space-realm palette. */
+  #starBtn {
     position: absolute;
-    top: 50%;
-    left: calc(50% + 45px);
-    transform: translateY(-50%);
-    font-family: inherit;
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-weight: 400;
-    color: rgba(255, 255, 255, 0.5);
-    text-decoration: none;
-    white-space: nowrap;
+    top: 8px;
+    left: calc(50% + 60px);
+    width: 58px;
+    height: 58px;
+    transform: translateX(-50%) scale(0.85);
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.92);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
     opacity: 0;
     pointer-events: none;
-    /* EXIT: fades out quickly as you leave the gallery. */
-    transition: opacity 0.18s ease, color 0.15s ease;
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.4))
+            drop-shadow(0 0 8px rgba(255, 255, 255, 0.18));
+    /* EXIT: collapses with the back-to-map pill, no delay. */
+    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
+                opacity   0.22s ease,
+                background 0.15s ease,
+                border-color 0.15s ease,
+                filter 0.3s ease;
   }
-  #submitLink:hover { color: rgba(255, 255, 255, 0.95); }
-  #bottomActions.gallery-mode #submitLink {
+  #starBtn:hover {
+    transform: translateX(-50%) scale(1.08);
+    background: rgba(255, 255, 255, 0.2);
+  }
+  #starBtn:active { transform: translateX(-50%) scale(0.96); }
+  #starBtn svg { width: 22px; height: 22px; display: block; }
+  #starBtn:disabled,
+  #starBtn.locked {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.5);
+    filter: none;
+  }
+  #starBtn:disabled:hover,
+  #starBtn.locked:hover {
+    transform: translateX(-50%) scale(1);
+    background: rgba(255, 255, 255, 0.06);
+  }
+  /* Active state — visitor is in aim mode, mirroring #flareBtn.active
+     so the cue reads consistently across the two placement flows. */
+  #starBtn.active {
+    border-color: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
+    color: #fff;
+    filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6))
+            drop-shadow(0 0 12px rgba(255, 255, 255, 0.28));
+  }
+  #bottomActions.gallery-mode #starBtn {
     opacity: 1;
+    transform: translateX(-50%) scale(1);
     pointer-events: auto;
-    /* ENTER: fades in LAST, just after the back-to-map pill finishes
-       blooming, so the link arrives as a quiet afterthought. */
-    transition: opacity 0.32s ease 0.42s, color 0.15s ease;
+    /* ENTER: bloom in LAST in step with the back-to-map pill. */
+    transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1) 0.22s,
+                opacity   0.34s ease 0.22s,
+                background 0.15s ease,
+                border-color 0.15s ease,
+                filter 0.3s ease;
   }
-  /* Narrow viewports: sit ABOVE the back-to-map pill (the toolbar is
-     pinned to the bottom of the viewport, so "below" runs off-screen). */
+  /* Narrow viewports: stack the star button ABOVE the back-to-map pill
+     so neither falls off the bottom of the screen. */
   @media (max-width: 600px) {
-    /* Narrow viewports stack: submit-work above, back-to-map below.
-       Both center-aligned to the page since they're vertically stacked. */
     #backToMapBtn {
       left: 50%;
     }
-    #submitLink {
+    #starBtn {
       top: auto;
       bottom: calc(100% + 14px);
       left: 50%;
-      transform: translateX(-50%);
     }
   }
 
   /* "coming soon" label above the gallery wall — quiet text that
      surfaces only in gallery mode, sitting under #topNav. Matches the
-     same fade-in-on-arrival / fade-out-on-exit pattern as #submitLink
-     and #backToMapBtn. Top center of the viewport reads as "above the
+     same fade-in-on-arrival / fade-out-on-exit pattern as #backToMapBtn
+     and #starBtn. Top center of the viewport reads as "above the
      frames" since the gallery occupies the central band. */
   #galleryComingSoon {
     position: fixed;
@@ -1262,6 +1301,152 @@
     transition: opacity 0.32s ease 0.42s;
   }
   body.leaving-earth #galleryComingSoon { opacity: 0; }
+
+  /* Stars live in their own Leaflet pane (created in JS via
+     map.createPane('stars')) so they're decoupled from the regular
+     marker pane that body.in-gallery hides. The pane fades in on
+     gallery arrival and out on the trip home — stars are exclusive
+     to the space realm and stay invisible on earth. */
+  .leaflet-stars-pane {
+    opacity: 0;
+    transition: opacity 0.55s ease;
+  }
+  body.in-gallery .leaflet-stars-pane { opacity: 1; }
+  body.flying-home .leaflet-stars-pane {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  /* Star marker — white stylized SVG with the same two-stack drop-
+     shadow recipe the chest uses, but in white. The marker DOM is a
+     transparent wrapper holding a .star span with the SVG inline. */
+  .star-wrap {
+    background: transparent !important;
+    border: none !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .star {
+    width: 24px;
+    height: 24px;
+    color: rgba(255, 255, 255, 0.95);
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.55))
+            drop-shadow(0 0 9px rgba(255, 255, 255, 0.22));
+    transition: transform 0.18s ease, filter 0.3s ease;
+    pointer-events: none;
+  }
+  .star svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .star-wrap:hover .star { transform: scale(1.12); }
+  .star.expanded { transform: scale(1.18); }
+  /* "mine" — the visitor's own star gets a faint inner ring so they
+     can spot it among others. Same idea as `.dot.mine`. */
+  .star.mine {
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.85))
+            drop-shadow(0 0 12px rgba(255, 255, 255, 0.32));
+  }
+
+  /* Star compose modal — same structure as flare compose, white
+     accents instead of amber. */
+  #starCompose {
+    position: fixed; inset: 0;
+    background: rgba(10, 18, 30, 0.65);
+    -webkit-backdrop-filter: blur(3px);
+            backdrop-filter: blur(3px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  #starCompose.open { display: flex; }
+  .star-compose-card {
+    background: rgba(255, 255, 255, 0.07);
+    -webkit-backdrop-filter: blur(16px);
+            backdrop-filter: blur(16px);
+    border: 0.5px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    padding: 20px 22px 16px;
+    width: min(440px, 92vw);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+  }
+  .star-compose-eyebrow {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .star-compose-target {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .star-compose-card textarea {
+    width: 100%;
+    min-height: 84px;
+    border: none;
+    outline: none;
+    resize: none;
+    font: inherit;
+    font-size: 15px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.92);
+    padding: 0;
+    background: transparent;
+    caret-color: rgba(255, 255, 255, 0.85);
+  }
+  .star-compose-card textarea::placeholder { color: rgba(255, 255, 255, 0.32); }
+  .star-compose-error {
+    margin-top: 10px;
+    font-size: 11.5px;
+    color: rgba(255, 150, 150, 0.85);
+    line-height: 1.4;
+  }
+  .star-compose-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 0.5px solid rgba(255, 255, 255, 0.12);
+  }
+  .star-compose-counter {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.3);
+    font-variant-numeric: tabular-nums;
+  }
+  .star-compose-counter.over { color: rgba(255, 140, 110, 0.85); }
+  .star-btn-primary {
+    background: rgba(255, 255, 255, 0.85);
+    color: #0a1019;
+    border: 0.5px solid rgba(255, 255, 255, 0.85);
+    padding: 6px 14px;
+    font: inherit;
+    font-size: 12.5px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .star-btn-primary:hover { background: #fff; }
+  .star-btn-primary:disabled {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.35);
+    cursor: not-allowed;
+  }
+  .star-btn-secondary {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.55);
+    border: none;
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .star-btn-secondary:hover { color: rgba(255, 255, 255, 0.92); }
 
   /* Pulsing dot inside the + button — reuses the same @keyframes pulse the
      map dots use so the button visually previews what it does. */
@@ -2531,7 +2716,11 @@
         <path d="M12 5l7 7-7 7"/>
       </svg>
     </button>
-    <a id="submitLink" href="https://forms.gle/eQMkUrdNEjJKwFN99" target="_blank" rel="noopener" aria-label="submit work to the museum">submit work</a>
+    <button id="starBtn" class="locked" type="button" aria-label="plant a star in space">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <polygon points="12,2 14.59,8.63 21.5,9.27 16.25,13.97 17.77,21 12,17.27 6.23,21 7.75,13.97 2.5,9.27 9.41,8.63" fill="currentColor"/>
+      </svg>
+    </button>
   </div>
   <div id="galleryComingSoon" aria-hidden="true">coming soon</div>
 </div>
@@ -2566,6 +2755,14 @@
 
     const flareBtn = document.getElementById("flareBtn");
     if (flareBtn) flareBtn.classList.toggle("locked", !dropped || shot);
+
+    // Star button: locked iff a star is already planted today. Plant gate
+    // has no dot requirement (space realm is decoupled from earth).
+    let planted = false;
+    const stars = readDay("hw-user-stars", "ids");
+    if (Array.isArray(stars)) planted = stars.length > 0;
+    const starBtn = document.getElementById("starBtn");
+    if (starBtn) starBtn.classList.toggle("locked", planted);
   } catch (e) {}
 })();
 </script>
@@ -2693,6 +2890,22 @@
       <div class="btn-row">
         <button class="btn" id="flareCancelBtn" type="button">cancel</button>
         <button class="flare-btn-primary" id="flareSendBtn" type="button" disabled>shoot</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="starCompose" role="dialog" aria-modal="true">
+  <div class="star-compose-card">
+    <div class="star-compose-eyebrow">plant a star</div>
+    <div class="star-compose-target" id="starComposeTarget">a quiet corner of space</div>
+    <textarea id="starComposeText" maxlength="100" placeholder="say something into the void..."></textarea>
+    <div id="starComposeError" class="star-compose-error" hidden></div>
+    <div class="star-compose-actions">
+      <div class="star-compose-counter" id="starComposeCounter">100</div>
+      <div class="btn-row">
+        <button class="star-btn-secondary" id="starCancelBtn" type="button">cancel</button>
+        <button class="star-btn-primary" id="starSendBtn" type="button" disabled>plant</button>
       </div>
     </div>
   </div>
@@ -3932,7 +4145,14 @@ function loadArtists() {
   return bySlot;
 }
 
+// Frames are turned off for the "space realm" iteration — the gallery
+// view stays as the rocket destination, but the wall is empty so stars
+// (planted via the toolbar's star button) have the whole space to
+// themselves. Flip to true to bring the framed wall back.
+const SHOW_GALLERY_FRAMES = false;
+
 (function renderGallery() {
+  if (!SHOW_GALLERY_FRAMES) return;
   const artistsBySlot = loadArtists();
   for (let row = 0; row < GRID_ROWS; row++) {
     for (let col = 0; col < GRID_COLS; col++) {
@@ -7929,6 +8149,565 @@ if (IS_DEV_MODE) {
   };
 }
 
+// ───────────── STARS ─────────────
+// Space-realm parallel of flares. Planted by tapping the star button
+// while in gallery mode, then clicking anywhere on the map. No GPS
+// required. Reply threading mirrors the dot pattern (50 chars/reply,
+// 500 total, no back-to-back, owner can't post the first reply) but
+// the participation gate is "must have planted a star today" instead
+// of "must have dropped a dot today" — stars are a self-contained
+// realm away from earth's rules.
+const STAR_KEY = "hw-user-stars";
+const stars = [];
+const starMarkers = new Map();
+const starLayer = L.layerGroup();
+const STAR_SVG =
+  '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<polygon points="12,2 14.59,8.63 21.5,9.27 16.25,13.97 17.77,21 12,17.27 6.23,21 7.75,13.97 2.5,9.27 9.41,8.63" fill="currentColor"/>' +
+  '</svg>';
+
+// Custom pane so stars aren't hidden by body.in-gallery's marker-pane
+// rule. Pane z-index sits just above the regular marker pane (600) so
+// stars draw over any leftover earth markers during the trip in/out.
+map.createPane("stars");
+map.getPane("stars").style.zIndex = 651;
+// Class added so the CSS selector .leaflet-stars-pane can drive the
+// gallery-only opacity transition.
+map.getPane("stars").classList.add("leaflet-stars-pane");
+
+function loadUserStars() {
+  try {
+    const raw = localStorage.getItem(STAR_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    if (data && data.date === todayStamp() && Array.isArray(data.ids)) return data.ids;
+  } catch (e) {}
+  return [];
+}
+function saveUserStars(ids) {
+  try {
+    localStorage.setItem(STAR_KEY, JSON.stringify({ date: todayStamp(), ids }));
+  } catch (e) {}
+}
+function hasPlantedStarToday() { return loadUserStars().length > 0; }
+
+function rowToStar(row) {
+  return {
+    id: row.id,
+    text: row.text,
+    lat: row.lat,
+    lng: row.lng,
+    planter_id: row.planter_id,
+    created_at: row.created_at || null,
+    responses: [],
+    mine: row.planter_id === PLANTER_ID
+  };
+}
+
+function starIconHtml(star) {
+  const cls = "star" + (star && star.mine ? " mine" : "");
+  return `<div class="${cls}" aria-hidden="true">${STAR_SVG}</div>`;
+}
+
+function addStarMarker(star) {
+  const icon = L.divIcon({
+    className: "star-wrap",
+    html: starIconHtml(star),
+    iconSize: [28, 28],
+    iconAnchor: [14, 14]
+  });
+  const m = L.marker([star.lat, star.lng], {
+    icon,
+    riseOnHover: true,
+    keyboard: false,
+    pane: "stars"
+  });
+  m.bindPopup(() => buildStarPopup(star), {
+    closeButton: false,
+    minWidth: 240,
+    maxWidth: 280,
+    autoPan: true,
+    autoPanPadding: [20, 20],
+    keepInView: false,
+    className: "flare-popup",
+    pane: "popupPane"
+  });
+
+  m.on("popupopen", () => {
+    const el = m.getElement();
+    if (el) { const s = el.querySelector(".star"); if (s) s.classList.add("expanded"); }
+  });
+  m.on("popupclose", () => {
+    const el = m.getElement();
+    if (el) { const s = el.querySelector(".star"); if (s) s.classList.remove("expanded"); }
+  });
+
+  starLayer.addLayer(m);
+  starMarkers.set(star.id, m);
+}
+
+function buildStarPopup(star) {
+  const wrap = document.createElement("div");
+  wrap.className = "flare-popup-content";
+
+  const responses = (star.responses || []).slice().sort((a, b) => {
+    return (a.created_at || "").localeCompare(b.created_at || "");
+  });
+  const usedChars = responses.reduce(
+    (sum, r) => sum + ((r && r.text) ? r.text.length : 0), 0
+  );
+  const remaining = Math.max(0, 500 - usedChars);
+  const isFull = remaining <= 0;
+  const lastResponderId = responses.length > 0
+    ? responses[responses.length - 1].responder_id
+    : null;
+  const iAmLastSpeaker = lastResponderId === PLANTER_ID;
+  const isMine = star.planter_id === PLANTER_ID;
+  const ownerLockedFirst = isMine && responses.length === 0;
+  const viewerHasStar = hasPlantedStarToday();
+  const canRespond =
+    viewerHasStar &&
+    !isFull &&
+    !iAmLastSpeaker &&
+    !ownerLockedFirst;
+  const replyMax = Math.min(50, remaining);
+
+  const target = getCurrentLang();
+  const wantTranslate = target && target !== "off";
+  const optimistic = (text) => {
+    if (!wantTranslate || !text) return text || "";
+    return getTranslatedNow(text, target) || text;
+  };
+
+  let html =
+    `<div class="flare-popup-eyebrow">star · in space</div>` +
+    `<div class="flare-popup-q">${escapeHtml(optimistic(star.text))}</div>` +
+    `<div class="flare-popup-meta">` +
+      `<span>${isMine ? "your star" : "from a stranger in space"}</span>` +
+    `</div>`;
+
+  if (responses.length > 0) {
+    html +=
+      `<div class="flare-popup-divider"></div>` +
+      `<div class="flare-popup-response-list-wrap">` +
+        `<div class="flare-popup-response-list">`;
+    for (const r of responses) {
+      html += `<div class="flare-popup-response">${escapeHtml(optimistic(r.text))}</div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  if (canRespond) {
+    html +=
+      `<div class="flare-popup-divider"></div>` +
+      `<div class="flare-popup-respond-area">` +
+        `<textarea data-star-respond maxlength="${replyMax}" placeholder="say something back..."></textarea>` +
+        `<div class="flare-popup-respond-actions">` +
+          `<span class="flare-popup-counter" data-star-counter>${replyMax}</span>` +
+          `<button class="flare-btn-primary" data-star-send disabled>respond</button>` +
+        `</div>` +
+        `<div class="flare-popup-error" data-star-error hidden></div>` +
+      `</div>` +
+      `<div class="flare-popup-budget">${remaining} of 500 left in this thread</div>`;
+  } else if (isFull) {
+    html += `<div class="flare-popup-divider"></div><div class="flare-popup-locked">this conversation is closed.</div>`;
+  } else if (ownerLockedFirst) {
+    html += `<div class="flare-popup-divider"></div><div class="flare-popup-locked">waiting for replies…</div>`;
+  } else if (iAmLastSpeaker) {
+    html += `<div class="flare-popup-divider"></div><div class="flare-popup-locked">wait for someone else to reply.</div>`;
+  } else if (!viewerHasStar) {
+    html += `<div class="flare-popup-divider"></div><div class="flare-popup-locked">plant a star first to reply.</div>`;
+  }
+
+  wrap.innerHTML = html;
+
+  // Bottom-fade on the response list, matching the flare/dot pattern.
+  const respWrap = wrap.querySelector(".flare-popup-response-list-wrap");
+  const respList = wrap.querySelector(".flare-popup-response-list");
+  if (respWrap && respList) {
+    const updateFade = () => {
+      const rem = respList.scrollHeight - respList.clientHeight - respList.scrollTop;
+      respWrap.classList.toggle("show-fade", rem > 4);
+    };
+    respList.addEventListener("scroll", updateFade);
+    requestAnimationFrame(updateFade);
+    setTimeout(updateFade, 350);
+  }
+
+  // Async translation: question + each reply.
+  if (wantTranslate) {
+    const replaceWhenReady = (el, text) => {
+      if (!el || !text) return;
+      if (getTranslatedNow(text, target)) return;
+      translate(text, target).then((t) => {
+        if (!t || !t.trim()) return;
+        if (!el.isConnected || getCurrentLang() !== target) return;
+        if (el.textContent === t) return;
+        el.textContent = t;
+      });
+    };
+    replaceWhenReady(wrap.querySelector(".flare-popup-q"), star.text);
+    const respEls = wrap.querySelectorAll(".flare-popup-response");
+    responses.forEach((r, i) => replaceWhenReady(respEls[i], r.text));
+  }
+
+  const ta = wrap.querySelector("[data-star-respond]");
+  const sendBtn = wrap.querySelector("[data-star-send]");
+  const counter = wrap.querySelector("[data-star-counter]");
+  const errEl = wrap.querySelector("[data-star-error]");
+  if (ta && sendBtn && counter) {
+    const sync = () => {
+      const len = ta.value.length;
+      counter.textContent = String(replyMax - len);
+      counter.classList.toggle("over", len > replyMax);
+      sendBtn.disabled = !(len > 0 && len <= replyMax);
+      if (errEl && !errEl.hidden) { errEl.hidden = true; errEl.textContent = ""; }
+    };
+    ta.addEventListener("input", sync);
+    sendBtn.addEventListener("click", async () => {
+      const text = ta.value.trim();
+      if (!text || text.length > replyMax) return;
+      sendBtn.disabled = true;
+      const ok = await respondToStar(star.id, text, errEl);
+      if (!ok) sendBtn.disabled = false;
+    });
+  }
+
+  return wrap;
+}
+
+// Atomic budget via the insert_star_response RPC. Error codes parallel
+// the message-response RPC: P0001 invalid length, P0002 thread full,
+// P0003 back-to-back, P0004 author-can't-go-first.
+async function respondToStar(starId, text, errEl) {
+  const blocked = checkContentBlocks(text);
+  if (blocked) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = blocked;
+    }
+    return false;
+  }
+  try {
+    const { data, error } = await sb
+      .rpc("insert_star_response", {
+        p_star_id: starId,
+        p_responder_id: PLANTER_ID,
+        p_text: sanitizeProfanity(text)
+      })
+      .single();
+
+    if (error) {
+      if (errEl) {
+        errEl.hidden = false;
+        if (error.code === "P0002" || /thread_full/i.test(error.message || "")) {
+          errEl.textContent = "this conversation is closed.";
+        } else if (error.code === "P0003" || /back_to_back/i.test(error.message || "")) {
+          errEl.textContent = "wait for someone else to reply.";
+        } else if (error.code === "P0004" || /owner_first/i.test(error.message || "")) {
+          errEl.textContent = "you can't open your own thread.";
+        } else if (error.code === "P0001" || /reply_invalid_length/i.test(error.message || "")) {
+          errEl.textContent = "reply must be 1–50 characters.";
+        } else {
+          errEl.textContent = "couldn't send. check your connection.";
+        }
+      }
+      return false;
+    }
+    if (!data) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "couldn't send. check your connection.";
+      }
+      return false;
+    }
+
+    const s = stars.find(x => x.id === starId);
+    if (s) {
+      if (!s.responses) s.responses = [];
+      if (!s.responses.some(r => r.id === data.id)) s.responses.push(data);
+      const m = starMarkers.get(s.id);
+      if (m && m.isPopupOpen()) {
+        const popup = m.getPopup();
+        if (popup) {
+          popup.setContent(buildStarPopup(s));
+          if (popup.update) popup.update();
+        }
+      }
+    }
+    return true;
+  } catch (e) {
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = "couldn't send. check your connection.";
+    }
+    return false;
+  }
+}
+
+// ───────────── STAR PLACEMENT MODE ─────────────
+const starCompose = document.getElementById("starCompose");
+const starComposeText = document.getElementById("starComposeText");
+const starComposeTarget = document.getElementById("starComposeTarget");
+const starComposeCounter = document.getElementById("starComposeCounter");
+const starComposeError = document.getElementById("starComposeError");
+const starSendBtn = document.getElementById("starSendBtn");
+const starCancelBtn = document.getElementById("starCancelBtn");
+const starBtn = document.getElementById("starBtn");
+
+let starPlacementMode = false;
+let starTouchAiming = false;
+let starLastAimLatLng = null;
+let pendingStarLatLng = null;
+
+function showStarError(text) {
+  starComposeError.textContent = text;
+  starComposeError.hidden = false;
+}
+function clearStarError() {
+  starComposeError.textContent = "";
+  starComposeError.hidden = true;
+}
+function updateStarCounter() {
+  const len = starComposeText.value.length;
+  starComposeCounter.textContent = String(100 - len);
+  starComposeCounter.classList.toggle("over", len > 100);
+  starSendBtn.disabled = !(len > 0 && len <= 100);
+  if (!starComposeError.hidden) clearStarError();
+}
+
+function syncStarBtn() {
+  if (!starBtn) return;
+  const planted = hasPlantedStarToday();
+  starBtn.classList.toggle("locked", planted);
+  const label = planted
+    ? "you've planted your star today"
+    : "plant a star in space";
+  starBtn.setAttribute("aria-label", label);
+  starBtn.setAttribute("title", label);
+}
+
+function enterStarPlacementMode() {
+  if (starPlacementMode) return;
+  starPlacementMode = true;
+  document.body.classList.add("flare-placing");
+  starBtn.classList.add("active");
+  pinHint(IS_HOVER_DEVICE
+    ? "tap anywhere in space to plant your star"
+    : "press and hold to aim · lift to plant");
+  if (!IS_HOVER_DEVICE) {
+    map.dragging.disable();
+    if (map.touchZoom) map.touchZoom.disable();
+  }
+}
+function exitStarPlacementMode() {
+  if (!starPlacementMode) return;
+  starPlacementMode = false;
+  starTouchAiming = false;
+  starLastAimLatLng = null;
+  document.body.classList.remove("flare-placing");
+  starBtn.classList.remove("active");
+  hideHint();
+  hideAimLabel();
+  if (!IS_HOVER_DEVICE) {
+    map.dragging.enable();
+    if (map.touchZoom) map.touchZoom.enable();
+  }
+}
+
+function requestStar() {
+  if (starPlacementMode) { exitStarPlacementMode(); return; }
+  if (hasPlantedStarToday()) {
+    flashHint("you've planted your star today");
+    return;
+  }
+  enterStarPlacementMode();
+}
+
+function openStarCompose(latlng) {
+  pendingStarLatLng = latlng;
+  starComposeText.value = "";
+  starComposeTarget.textContent = "a quiet corner of space";
+  clearStarError();
+  updateStarCounter();
+  starCompose.classList.add("open");
+  setTimeout(() => starComposeText.focus(), 60);
+}
+function closeStarCompose() {
+  starCompose.classList.remove("open");
+  pendingStarLatLng = null;
+}
+
+async function submitStar() {
+  const text = starComposeText.value.trim();
+  if (!text || text.length > 100 || !pendingStarLatLng) return;
+  if (URL_RE.test(text)) {
+    showStarError("links aren't allowed here. plain text only.");
+    return;
+  }
+  const blocked = checkContentBlocks(text);
+  if (blocked) {
+    showStarError(blocked);
+    return;
+  }
+  if (hasPlantedStarToday()) { closeStarCompose(); return; }
+
+  const ll = pendingStarLatLng;
+  starSendBtn.disabled = true;
+
+  const { data, error } = await sb
+    .from("stars")
+    .insert({
+      text: sanitizeProfanity(text),
+      lat: ll.lat,
+      lng: ll.lng,
+      planter_id: PLANTER_ID
+    })
+    .select()
+    .single();
+
+  if (error || !data) {
+    starSendBtn.disabled = false;
+    showStarError("couldn't plant. check your connection.");
+    return;
+  }
+
+  const star = rowToStar(data);
+  star.mine = true;
+  stars.push(star);
+  saveUserStars([...loadUserStars(), star.id]);
+  addStarMarker(star);
+  if (!map.hasLayer(starLayer)) starLayer.addTo(map);
+
+  closeStarCompose();
+  syncStarBtn();
+  const m = starMarkers.get(star.id);
+  if (m) m.openPopup();
+}
+
+starComposeText.addEventListener("input", updateStarCounter);
+starSendBtn.addEventListener("click", submitStar);
+starCancelBtn.addEventListener("click", closeStarCompose);
+starCompose.addEventListener("click", (e) => {
+  if (e.target === starCompose) closeStarCompose();
+});
+starBtn.addEventListener("click", requestStar);
+
+// ── Star aim handlers — desktop ──
+if (IS_HOVER_DEVICE) {
+  map.on("mousemove", (e) => {
+    if (!starPlacementMode) return;
+    // Aim label off in star mode — "in space" everywhere isn't informative.
+    // Keep just the crosshair cursor cue from .flare-placing.
+    hideAimLabel();
+    e; // unused
+  });
+  map.on("click", (e) => {
+    if (!starPlacementMode) return;
+    const ll = e.latlng;
+    exitStarPlacementMode();
+    openStarCompose(ll);
+  });
+}
+
+// ── Star aim handlers — touch ──
+if (!IS_HOVER_DEVICE) {
+  const mapEl = map.getContainer();
+
+  function starPointFromTouch(touch) {
+    const rect = mapEl.getBoundingClientRect();
+    return L.point(touch.clientX - rect.left, touch.clientY - rect.top);
+  }
+
+  mapEl.addEventListener("touchstart", (e) => {
+    if (!starPlacementMode) return;
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    starTouchAiming = true;
+    document.body.classList.add("flare-aiming-active");
+    const point = starPointFromTouch(e.touches[0]);
+    starLastAimLatLng = map.containerPointToLatLng(point);
+  }, { passive: false });
+
+  mapEl.addEventListener("touchmove", (e) => {
+    if (!starPlacementMode || !starTouchAiming) return;
+    e.preventDefault();
+    const point = starPointFromTouch(e.touches[0]);
+    starLastAimLatLng = map.containerPointToLatLng(point);
+  }, { passive: false });
+
+  mapEl.addEventListener("touchend", () => {
+    if (!starPlacementMode || !starTouchAiming) return;
+    starTouchAiming = false;
+    document.body.classList.remove("flare-aiming-active");
+    const ll = starLastAimLatLng;
+    if (!ll) return;
+    exitStarPlacementMode();
+    openStarCompose(ll);
+  });
+
+  mapEl.addEventListener("touchcancel", () => {
+    if (!starPlacementMode) return;
+    starTouchAiming = false;
+    document.body.classList.remove("flare-aiming-active");
+  });
+}
+
+// ESC cancels star placement, parallel to flare ESC.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && starPlacementMode) exitStarPlacementMode();
+});
+
+// Dev helper — clears today's star lock for testing.
+if (IS_DEV_MODE) {
+  window.resetMyStar = function () {
+    localStorage.removeItem(STAR_KEY);
+    for (const s of stars.filter(s => s.mine)) {
+      const m = starMarkers.get(s.id);
+      if (m) starLayer.removeLayer(m);
+      starMarkers.delete(s.id);
+    }
+    // Strip mine flag from any remaining (paranoia for hot-reload paths).
+    for (let i = stars.length - 1; i >= 0; i--) {
+      if (stars[i].mine) stars.splice(i, 1);
+    }
+    syncStarBtn();
+    console.log("%c[dev] resetMyStar: localStorage cleared", "color:#ffffff");
+    return "ok";
+  };
+}
+
+// Apply helpers used by boot fetch + polling. Idempotent so a row
+// returned by both paths lands exactly once.
+function applyStarRow(row) {
+  if (!row || !row.id) return false;
+  if (starMarkers.has(row.id)) return false;
+  const star = rowToStar(row);
+  stars.push(star);
+  addStarMarker(star);
+  if (!map.hasLayer(starLayer)) starLayer.addTo(map);
+  return true;
+}
+function applyStarResponseRow(row) {
+  if (!row || !row.id) return false;
+  const s = stars.find(x => x.id === row.star_id);
+  if (!s) return false;
+  if (!s.responses) s.responses = [];
+  if (s.responses.some(r => r.id === row.id)) return false;
+  s.responses.push(row);
+  return true;
+}
+function refreshOpenStarPopup(starId) {
+  const m = starMarkers.get(starId);
+  if (!m || !m.isPopupOpen || !m.isPopupOpen()) return;
+  const star = stars.find(x => x.id === starId);
+  if (!star) return;
+  const popup = m.getPopup();
+  if (!popup) return;
+  popup.setContent(buildStarPopup(star));
+  if (popup.update) popup.update();
+}
+
 // ───────────── BOOT ─────────────
 (async function boot() {
   // Close the instant-paint window 1.5s after boot starts. Within this
@@ -8062,6 +8841,7 @@ if (IS_DEV_MODE) {
   renderHeardPanel();
   syncDropBtn();
   syncFlareBtn();
+  syncStarBtn();
 
   // Flares.
   let flareRows = bundle?.flares ?? null;
@@ -8140,6 +8920,60 @@ if (IS_DEV_MODE) {
         if (!m) continue;
         if (!m.responses) m.responses = [];
         m.responses.push(r);
+      }
+    }
+  }
+
+  // Stars (space realm). Worker bundle doesn't carry these yet, so the
+  // boot fetch always goes direct to Supabase. If/when the worker is
+  // updated to bundle stars + star_responses, this falls into the same
+  // bundle-first / direct-fallback pattern as everything above.
+  let starRows = bundle?.stars ?? null;
+  if (starRows == null) {
+    try {
+      const { data, error } = await sb
+        .from("stars")
+        .select("id, text, lat, lng, planter_id, created_at")
+        .gte("created_at", todayMidnightUTC())
+        .order("created_at", { ascending: true });
+      if (error) console.warn("[supabase] stars fetch failed:", error.message);
+      else starRows = data;
+    } catch (e) {
+      console.warn("[supabase] stars fetch threw:", e);
+    }
+  }
+  if (Array.isArray(starRows)) {
+    for (const row of starRows) {
+      const star = rowToStar(row);
+      stars.push(star);
+      addStarMarker(star);
+    }
+    if (stars.length && !map.hasLayer(starLayer)) starLayer.addTo(map);
+  }
+
+  // Star responses — only relevant if there are stars to attach to.
+  if (stars.length > 0) {
+    let starRespRows = bundle?.star_responses ?? null;
+    if (starRespRows == null) {
+      try {
+        const { data, error } = await sb
+          .from("star_responses")
+          .select("id, star_id, responder_id, text, created_at")
+          .gte("created_at", todayMidnightUTC())
+          .order("created_at", { ascending: true });
+        if (error) console.warn("[supabase] star responses fetch failed:", error.message);
+        else starRespRows = data;
+      } catch (e) {
+        console.warn("[supabase] star responses fetch threw:", e);
+      }
+    }
+    if (Array.isArray(starRespRows)) {
+      const starById = new Map(stars.map(s => [s.id, s]));
+      for (const r of starRespRows) {
+        const s = starById.get(r.star_id);
+        if (!s) continue;
+        if (!s.responses) s.responses = [];
+        s.responses.push(r);
       }
     }
   }
@@ -8269,6 +9103,12 @@ if (IS_DEV_MODE) {
         sb.from("message_responses")
           .select("id, message_id, responder_id, text, created_at")
           .gt("created_at", since).order("created_at", { ascending: true }),
+        sb.from("stars")
+          .select("id, text, lat, lng, planter_id, created_at")
+          .gt("created_at", since).order("created_at", { ascending: true }),
+        sb.from("star_responses")
+          .select("id, star_id, responder_id, text, created_at")
+          .gt("created_at", since).order("created_at", { ascending: true }),
         // Chest claim for the current UTC hour. Single row at most;
         // `maybeSingle` returns `data: null` cleanly when unclaimed.
         sb.from("chest_claims")
@@ -8276,7 +9116,7 @@ if (IS_DEV_MODE) {
           .eq("hour_key", hk).maybeSingle()
       ];
       const results = await Promise.all(queries);
-      const [m, f, r, mr, c] = results;
+      const [m, f, r, mr, s, sr, c] = results;
       let touched = false;
       let maxSeen = since;
       if (Array.isArray(m.data)) {
@@ -8301,6 +9141,18 @@ if (IS_DEV_MODE) {
         for (const row of mr.data) {
           if (row.created_at && row.created_at > maxSeen) maxSeen = row.created_at;
           if (applyMessageResponseRow(row)) refreshOpenDotPopup(row.message_id);
+        }
+      }
+      if (s && Array.isArray(s.data)) {
+        for (const row of s.data) {
+          if (row.created_at && row.created_at > maxSeen) maxSeen = row.created_at;
+          applyStarRow(row);
+        }
+      }
+      if (sr && Array.isArray(sr.data)) {
+        for (const row of sr.data) {
+          if (row.created_at && row.created_at > maxSeen) maxSeen = row.created_at;
+          if (applyStarResponseRow(row)) refreshOpenStarPopup(row.star_id);
         }
       }
       // Advance the cursor unconditionally — even when every returned row

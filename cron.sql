@@ -26,6 +26,11 @@ SELECT cron.schedule(
   'midnight-utc-reset',
   '0 0 * * *',
   $$
-    TRUNCATE TABLE reports, flare_responses, flares, message_responses, messages, chest_claims;
+    TRUNCATE TABLE
+      reports,
+      flare_responses, flares,
+      message_responses, messages,
+      star_responses, stars,
+      chest_claims;
   $$
 );
