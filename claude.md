@@ -180,10 +180,12 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS continent text;
 - Polling continues to hit Supabase directly (the polling endpoint is
   per-client cursor and small per call). `chest_claims` boot read also
   stays direct (single-row, narrow, not worth caching).
-- Worker code lives in the Cloudflare dashboard — not in this repo. The
-  full source is `dropadot-cache` on dash.cloudflare.com; if it ever needs
-  recreation, the canonical version was committed alongside the wiring
-  in `2032cd4 Wire boot path to Cloudflare Worker for cached loadAll`.
+- **Canonical worker source: `worker.js` in this repo.** The live worker
+  in the Cloudflare dashboard is a manual copy-paste from this file —
+  the dashboard does NOT auto-sync with the repo. When you change
+  `worker.js`, also paste it into dash.cloudflare.com → Workers & Pages
+  → dropadot-cache → Edit code → Save and Deploy. (Keep both in sync,
+  or the bundle that visitors actually hit will lag the source.)
 
 ## Flares
 A second interaction type: a question/wish anchored to a continent. Visitors

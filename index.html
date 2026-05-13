@@ -1237,19 +1237,6 @@
   .star svg { width: 100%; height: 100%; display: block; overflow: visible; }
   .star-wrap:hover .star { transform: scale(1.12); }
   .star.expanded { transform: scale(1.18); }
-  /* Halo pulse — circular ring that expands outward from the star,
-     mirroring the dot's `.dot::after` recipe but in white. Same
-     @keyframes pulse the dots use, so the cadence reads as part of
-     the same vocabulary. */
-  .star::after {
-    content: '';
-    position: absolute;
-    inset: -4px;
-    border-radius: 50%;
-    border: 1.5px solid rgba(255, 255, 255, 0.55);
-    animation: pulse 3s ease-out infinite;
-    pointer-events: none;
-  }
   /* "mine" — the visitor's own star gets a faint outline so they can
      spot it among others. Same idea as `.dot.mine`, but no glow. */
   .star.mine svg { filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.95)); }
@@ -8580,6 +8567,20 @@ starCompose.addEventListener("click", (e) => {
 });
 starBtn.addEventListener("click", requestStar);
 
+// Wrap any latlng back into the gallery's longitude band (centered
+// at GRID_CENTER_LNG = -450). The map uses worldCopyJump so a click
+// at e.g. lng=-90 (earth-Americas) is the same visual spot as
+// lng=-450 (gallery-Americas). Without normalizing, a star planted
+// from earth-side coords would store at lng=-90 and read as a star
+// on earth in the DB — invisible on the live map (stars pane is
+// gallery-only) but untidy. Wrap to the canonical space copy.
+function normalizeToGalleryLng(latlng) {
+  let lng = latlng.lng;
+  while (lng > GRID_CENTER_LNG + 180) lng -= 360;
+  while (lng < GRID_CENTER_LNG - 180) lng += 360;
+  return L.latLng(latlng.lat, lng);
+}
+
 // ── Star aim handlers — desktop ──
 if (IS_HOVER_DEVICE) {
   map.on("mousemove", (e) => {
@@ -8591,7 +8592,7 @@ if (IS_HOVER_DEVICE) {
   });
   map.on("click", (e) => {
     if (!starPlacementMode) return;
-    const ll = e.latlng;
+    const ll = normalizeToGalleryLng(e.latlng);
     exitStarPlacementMode();
     openStarCompose(ll);
   });
@@ -8630,7 +8631,7 @@ if (!IS_HOVER_DEVICE) {
     const ll = starLastAimLatLng;
     if (!ll) return;
     exitStarPlacementMode();
-    openStarCompose(ll);
+    openStarCompose(normalizeToGalleryLng(ll));
   });
 
   mapEl.addEventListener("touchcancel", () => {
