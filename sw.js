@@ -25,7 +25,7 @@
 // user-visible content — dots, flares, casts — is fetched fresh on
 // every load and not part of the cached shell.)
 
-const CACHE_VERSION = "dropadot-shell-v1";
+const CACHE_VERSION = "dropadot-shell-v2";
 
 self.addEventListener("install", (event) => {
   // Take over from any existing SW immediately so the user doesn't have
