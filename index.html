@@ -3336,7 +3336,7 @@
     const flares = readDay("hw-user-flares", "flares");
     if (Array.isArray(flares)) shot = flares.length > 0;
     const cast = !!readDay("hw-casted-today", "castId");
-    const castEnabled = new URLSearchParams(location.search).get("cast") !== "0";
+    const castEnabled = new URLSearchParams(location.search).get("cast") === "1";
 
     const flareBtn = document.getElementById("flareBtn");
     if (flareBtn) flareBtn.classList.toggle("locked", !dropped || shot);
