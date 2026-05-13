@@ -797,6 +797,14 @@
     fill: rgba(255, 255, 255, 0.85);
     filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.35));
   }
+  /* Five-pointed star — white to mirror the marker palette. Same size
+     as the flare/spirit icons so the section headers stay aligned. */
+  .help-icon-star {
+    width: 13px; height: 13px;
+    flex-shrink: 0;
+    fill: rgba(255, 255, 255, 0.92);
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.35));
+  }
   .help-footer {
     margin-top: 6px;
     padding-top: 14px;
@@ -2753,6 +2761,15 @@
         <span>Flares</span>
       </div>
       <div class="help-section-body">Aim one anywhere on the map. Anyone on that continent can chime in. The thread closes once enough has been said. One flare per day.</div>
+    </div>
+    <div class="help-section">
+      <div class="help-section-header">
+        <svg class="help-icon-star" viewBox="0 0 24 24" aria-hidden="true">
+          <polygon points="12,2 14.59,8.63 21.5,9.27 16.25,13.97 17.77,21 12,17.27 6.23,21 7.75,13.97 2.5,9.27 9.41,8.63"/>
+        </svg>
+        <span>Stars</span>
+      </div>
+      <div class="help-section-body">Take the rocket to space and plant a star anywhere — no dot needed. Anyone who's planted a star today can reply. Same back-and-forth rules as dots. One star per day.</div>
     </div>
     <div class="help-section">
       <div class="help-section-header">
