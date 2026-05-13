@@ -367,9 +367,13 @@ applies all three guards:
   under `body.in-gallery`. This makes stars exclusive to the space
   realm — they don't bleed onto earth and don't get hidden by the
   same in-gallery rule that fades out earthly markers.
-- Toolbar button `#starBtn` sits to the right of `#backToMapBtn` in
-  gallery mode (replaced the old submit-work link). White tint, white
-  drop-shadow glow, locked-state styling when planted today.
+- Toolbar in gallery mode swaps the earth-side buttons (drop, flare,
+  museum) for the space-side pair: `#starBtn` (white star, left) and
+  `#earthBackBtn` (globe icon, right — returns to earth). The pill
+  chrome stays identical across both modes; only the buttons inside
+  swap, via a hard `display: none / display: flex` toggle (no
+  cross-fade). The snap toggle eliminated the ghostly bleed where
+  both icon sets used to be briefly visible during transitions.
 
 ### Boot + polling
 - Boot: direct Supabase SELECT for `stars` + `star_responses` on the

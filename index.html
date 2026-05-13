@@ -951,6 +951,7 @@
   /* Two-ID specificity (inside #bottomZone) so this wins over the base
      position: fixed declarations below without needing !important. */
   #bottomZone #dropPrompt,
+  #bottomZone #starPrompt,
   #bottomZone #hint {
     position: absolute;
     bottom: 0;
@@ -959,7 +960,9 @@
      the container; the buttons inside no longer carry their own border or
      blur — they just have tinted backgrounds. */
   #bottomActions {
-    /* Same glass as #topNav so the pill and the nav read as one material. */
+    /* Same glass as #topNav so the pill and the nav read as one material.
+       The pill chrome stays identical in earth and space modes — only the
+       buttons inside swap. */
     background: rgba(8, 17, 25, 0.85);
     -webkit-backdrop-filter: blur(12px);
             backdrop-filter: blur(12px);
@@ -970,28 +973,6 @@
     align-items: center;
     gap: 8px;
     pointer-events: auto;
-    /* Staggered morph between toolbar and back-to-map pill. The three
-       layers (toolbar shell, normal buttons, back-to-map) hand off in
-       sequence rather than animating in lockstep, which reads as one
-       smooth motion instead of a busy crossfade.
-       EXIT direction: shell rematerializes mid-cycle (delay 0.1s) so
-       it visually catches the buttons as they fade in afterward. */
-    transition: background 0.28s ease 0.1s,
-                border-color 0.28s ease 0.1s,
-                -webkit-backdrop-filter 0.28s ease 0.1s,
-                backdrop-filter 0.28s ease 0.1s;
-  }
-  #bottomActions.gallery-mode {
-    background: transparent;
-    border-color: transparent;
-    -webkit-backdrop-filter: none;
-            backdrop-filter: none;
-    /* ENTER direction: shell dissolves mid-cycle so the normal buttons
-       get a head start fading out. */
-    transition: background 0.28s ease 0.1s,
-                border-color 0.28s ease 0.1s,
-                -webkit-backdrop-filter 0.28s ease 0.1s,
-                backdrop-filter 0.28s ease 0.1s;
   }
   #dropBtn {
     width: 58px; height: 58px;
@@ -1016,41 +997,41 @@
   #dropBtn:active { transform: scale(0.96); }
   #dropBtn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-  /* Gallery mode — smooth morph between the normal toolbar buttons and
-     the back-to-map pill. Both states are always laid out (no display
-     toggling); the swap is purely visual via opacity + scale, with the
-     back-to-map pill positioned absolutely on top of the normal row so
-     the two can cross-fade in place. The longer opacity transition
-     (0.32s) is the dominant signal; the scale curve adds a subtle
-     bloom-in / bloom-out feel on each side. */
-  #bottomActions { position: relative; }
-  #dropBtn, #flareBtn, #museumBtn {
-    /* EXIT: buttons re-enter LAST, after the back-to-map pill has
-       collapsed and the toolbar shell has rematerialized. */
-    transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1) 0.22s,
-                opacity   0.32s ease 0.22s,
-                background 0.15s ease,
-                border-color 0.15s ease;
-  }
+  /* Gallery mode — display-toggle swap between earth-side buttons
+     (drop / flare / museum) and space-side buttons (star / earth-back).
+     The inactive set is `display: none` (zero layout, zero pixels), so
+     they can't ghost into the active view. The newly-active set bloom-
+     fades in via the toolbarBtnIn animation, which fires whenever a
+     button first becomes displayed (initial paint or class flip). The
+     pill chrome stays the same in both modes; only the buttons inside
+     swap. */
+  #starBtn, #earthBackBtn { display: none; }
   #bottomActions.gallery-mode #dropBtn,
   #bottomActions.gallery-mode #flareBtn,
-  #bottomActions.gallery-mode #museumBtn {
-    opacity: 0;
-    transform: scale(0.72);
-    pointer-events: none;
-    /* ENTER: buttons fade out FIRST, no delay. */
-    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
-                opacity   0.22s ease,
-                background 0.15s ease,
-                border-color 0.15s ease;
+  #bottomActions.gallery-mode #museumBtn { display: none; }
+  #bottomActions.gallery-mode #starBtn,
+  #bottomActions.gallery-mode #earthBackBtn { display: flex; }
+  #dropBtn,
+  #flareBtn,
+  #museumBtn,
+  #bottomActions.gallery-mode #starBtn,
+  #bottomActions.gallery-mode #earthBackBtn {
+    animation: toolbarBtnIn 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  @keyframes toolbarBtnIn {
+    from { opacity: 0; transform: scale(0.78); }
+    to   { opacity: 1; transform: scale(1); }
   }
   /* Ambient map-chrome that doesn't belong in the gallery space — every
      line in the bottom-text cluster refers to the daily-mark loop, which
      is irrelevant inside the museum. */
-  body.in-gallery #resetTimer,
-  body.in-gallery #hint,
   body.in-gallery #dropPrompt,
   body.in-gallery #birdCanvas { display: none; }
+  /* #hint and #resetTimer stay visible in gallery so flashHint()
+     messages and the universal midnight-UTC countdown still surface
+     above the space toolbar. The reset applies to everything (dots,
+     flares, stars, replies) — same timer reading is meaningful on
+     both sides. */
 
   /* Hide the world contents (continents, dots, flares, marker
      shadows) while inside the museum. Leaflet draws continents in
@@ -1137,96 +1118,37 @@
   #museumBtn:active { transform: scale(0.96); }
   #museumBtn svg { width: 18px; height: 18px; display: block; }
 
-  /* Back-to-map pill — sits absolutely centered inside the toolbar so it
-     can cross-fade with the normal buttons during the gallery-mode
-     morph. Hidden by default (opacity 0 + slight shrink), revealed when
-     #bottomActions has .gallery-mode. */
-  #backToMapBtn {
-    position: absolute;
-    top: 8px;
-    /* Shifted left of true center so the combined pair (back-to-map
-       pill + star button to its right) feels page-centered, not just
-       the pill. */
-    left: calc(50% - 65px);
-    height: 58px;
-    padding: 0 18px 0 22px;
-    border-radius: 50px;
-    border: 0.5px solid #173047;
-    background: rgba(8, 17, 25, 0.85);
-    -webkit-backdrop-filter: blur(12px);
-            backdrop-filter: blur(12px);
-    color: rgba(255, 255, 255, 0.92);
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 13px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    white-space: nowrap;
-    opacity: 0;
-    transform: translateX(-50%) scale(0.85);
-    pointer-events: none;
-    /* EXIT: back-to-map collapses FIRST, no delay. */
-    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
-                opacity   0.22s ease,
-                background 0.15s ease,
-                border-color 0.15s ease;
-  }
-  #backToMapBtn:hover {
-    background: rgba(8, 17, 25, 0.95);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-  #backToMapBtn svg { width: 16px; height: 16px; display: block; }
-  #bottomActions.gallery-mode #backToMapBtn {
-    opacity: 1;
-    transform: translateX(-50%) scale(1);
-    pointer-events: auto;
-    /* ENTER: bloom in LAST after the buttons fade and the shell dissolves. */
-    transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1) 0.22s,
-                opacity   0.34s ease 0.22s,
-                background 0.15s ease,
-                border-color 0.15s ease;
-  }
-
-  /* Star button — circle that surfaces only in gallery mode, sitting
-     to the right of the back-to-map pill. Tapping it enters star-
-     placement mode (aim + click anywhere in space to drop a star).
-     White tint + subtle white glow mirrors the chest's amber recipe
-     but in the space-realm palette. */
+  /* Star button — circle that sits in the pill in gallery mode, paired
+     with #earthBackBtn to its right. Tapping it enters star-placement
+     mode (aim + click anywhere in space to drop a star). White tint +
+     subtle white glow mirrors the chest's amber recipe but in the
+     space-realm palette. */
   #starBtn {
-    position: absolute;
-    top: 8px;
-    left: calc(50% + 60px);
     width: 58px;
     height: 58px;
-    transform: translateX(-50%) scale(0.85);
     border-radius: 50%;
     border: 1.5px solid transparent;
     background: rgba(255, 255, 255, 0.12);
     color: rgba(255, 255, 255, 0.92);
     cursor: pointer;
-    display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
-    opacity: 0;
-    pointer-events: none;
     filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.4))
             drop-shadow(0 0 8px rgba(255, 255, 255, 0.18));
-    /* EXIT: collapses with the back-to-map pill, no delay. */
-    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
-                opacity   0.22s ease,
+    transition: transform 0.15s ease,
                 background 0.15s ease,
                 border-color 0.15s ease,
                 filter 0.3s ease;
   }
   #starBtn:hover {
-    transform: translateX(-50%) scale(1.08);
+    transform: scale(1.08);
     background: rgba(255, 255, 255, 0.2);
   }
-  #starBtn:active { transform: translateX(-50%) scale(0.96); }
+  #starBtn:active { transform: scale(0.96); }
+  /* 22px because the 5-point star polygon doesn't fill its bounding
+     box (whitespace at corners), so it reads optically smaller than
+     the rocket at equal numeric sizes. 22px balances the pair. */
   #starBtn svg { width: 22px; height: 22px; display: block; }
   #starBtn:disabled,
   #starBtn.locked {
@@ -1238,7 +1160,7 @@
   }
   #starBtn:disabled:hover,
   #starBtn.locked:hover {
-    transform: translateX(-50%) scale(1);
+    transform: none;
     background: rgba(255, 255, 255, 0.06);
   }
   /* Active state — visitor is in aim mode, mirroring #flareBtn.active
@@ -1250,57 +1172,33 @@
     filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.6))
             drop-shadow(0 0 12px rgba(255, 255, 255, 0.28));
   }
-  #bottomActions.gallery-mode #starBtn {
-    opacity: 1;
-    transform: translateX(-50%) scale(1);
-    pointer-events: auto;
-    /* ENTER: bloom in LAST in step with the back-to-map pill. */
-    transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1) 0.22s,
-                opacity   0.34s ease 0.22s,
-                background 0.15s ease,
-                border-color 0.15s ease,
-                filter 0.3s ease;
-  }
-  /* Narrow viewports: stack the star button ABOVE the back-to-map pill
-     so neither falls off the bottom of the screen. */
-  @media (max-width: 600px) {
-    #backToMapBtn {
-      left: 50%;
-    }
-    #starBtn {
-      top: auto;
-      bottom: calc(100% + 14px);
-      left: 50%;
-    }
-  }
 
-  /* "coming soon" label above the gallery wall — quiet text that
-     surfaces only in gallery mode, sitting under #topNav. Matches the
-     same fade-in-on-arrival / fade-out-on-exit pattern as #backToMapBtn
-     and #starBtn. Top center of the viewport reads as "above the
-     frames" since the gallery occupies the central band. */
-  #galleryComingSoon {
-    position: fixed;
-    top: 70px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-family: inherit;
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-weight: 400;
-    color: rgba(255, 255, 255, 0.5);
-    white-space: nowrap;
-    opacity: 0;
-    pointer-events: none;
-    z-index: 700;
-    transition: opacity 0.18s ease;
+  /* Earth-back button — circle paired to the right of #starBtn in
+     gallery mode. Returns the visitor to the earth map. Same chrome
+     vocabulary as the earth-side toolbar buttons (white-tinted glass,
+     subtle hover scale) so the two pills read as the same material. */
+  #earthBackBtn {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform 0.15s ease, background 0.15s ease;
   }
-  body.in-gallery #galleryComingSoon {
-    opacity: 1;
-    transition: opacity 0.32s ease 0.42s;
+  #earthBackBtn:hover {
+    transform: scale(1.07);
+    background: rgba(255, 255, 255, 0.14);
   }
-  body.leaving-earth #galleryComingSoon { opacity: 0; }
+  #earthBackBtn:active { transform: scale(0.96); }
+  /* 18px to match #museumBtn — both are the rocket icon ("travel
+     between realms"), just contextually inverted (earth→space vs
+     space→earth). Same icon, same size. */
+  #earthBackBtn svg { width: 18px; height: 18px; display: block; }
 
   /* Stars live in their own Leaflet pane (created in JS via
      map.createPane('stars')) so they're decoupled from the regular
@@ -1329,23 +1227,32 @@
     cursor: pointer;
   }
   .star {
-    width: 24px;
-    height: 24px;
+    width: 16px;
+    height: 16px;
+    position: relative;
     color: rgba(255, 255, 255, 0.95);
-    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.55))
-            drop-shadow(0 0 9px rgba(255, 255, 255, 0.22));
-    transition: transform 0.18s ease, filter 0.3s ease;
+    transition: transform 0.18s ease;
     pointer-events: none;
   }
   .star svg { width: 100%; height: 100%; display: block; overflow: visible; }
   .star-wrap:hover .star { transform: scale(1.12); }
   .star.expanded { transform: scale(1.18); }
-  /* "mine" — the visitor's own star gets a faint inner ring so they
-     can spot it among others. Same idea as `.dot.mine`. */
-  .star.mine {
-    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.85))
-            drop-shadow(0 0 12px rgba(255, 255, 255, 0.32));
+  /* Halo pulse — circular ring that expands outward from the star,
+     mirroring the dot's `.dot::after` recipe but in white. Same
+     @keyframes pulse the dots use, so the cadence reads as part of
+     the same vocabulary. */
+  .star::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.55);
+    animation: pulse 3s ease-out infinite;
+    pointer-events: none;
   }
+  /* "mine" — the visitor's own star gets a faint outline so they can
+     spot it among others. Same idea as `.dot.mine`, but no glow. */
+  .star.mine svg { filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.95)); }
 
   /* Star compose modal — same structure as flare compose, white
      accents instead of amber. */
@@ -2346,6 +2253,34 @@
   }
   #dropPrompt.gone { opacity: 0; }
 
+  /* Space-realm parallel to #dropPrompt — same chrome, swapped copy and
+     gated to gallery mode. Hidden by default; flipped to visible when
+     body.in-gallery is on AND the visitor hasn't planted a star yet
+     today. .gone hides it for the rest of the day after planting. */
+  #starPrompt {
+    position: fixed;
+    bottom: 134px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.55);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 500;
+    white-space: nowrap;
+    transition: opacity 0.6s ease;
+    background: rgba(13, 24, 38, 0.55);
+    -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    padding: 6px 14px;
+    border-radius: 100px;
+    display: none;
+  }
+  body.in-gallery #starPrompt { display: block; }
+  #starPrompt.gone { opacity: 0; }
+
   #geoMsg {
     position: fixed; inset: 0;
     background: rgba(10, 18, 30, 0.78);
@@ -2690,6 +2625,7 @@
     <div id="resetTimer" aria-live="off"></div>
     <div class="bottom-text-slot">
       <div id="dropPrompt" aria-hidden="true">say something to the world</div>
+      <div id="starPrompt" aria-hidden="true">say something to the galaxy</div>
       <div id="hint" class="gone"></div>
     </div>
   </div>
@@ -2709,20 +2645,21 @@
         <path d="M 10 18 L 12 22 L 14 18"/>
       </svg>
     </button>
-    <button id="backToMapBtn" type="button" aria-label="back to earth">
-      <span>back to earth</span>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M5 12h14"/>
-        <path d="M12 5l7 7-7 7"/>
-      </svg>
-    </button>
     <button id="starBtn" class="locked" type="button" aria-label="plant a star in space">
       <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <polygon points="12,2 14.59,8.63 21.5,9.27 16.25,13.97 17.77,21 12,17.27 6.23,21 7.75,13.97 2.5,9.27 9.41,8.63" fill="currentColor"/>
       </svg>
     </button>
+    <button id="earthBackBtn" type="button" aria-label="back to earth">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 2 C 15 4, 16 9, 16 13 L 16 16 L 8 16 L 8 13 C 8 9, 9 4, 12 2 Z"/>
+        <path d="M 8 13 L 4 18 L 8 17"/>
+        <path d="M 16 13 L 20 18 L 16 17"/>
+        <circle cx="12" cy="9" r="1.5"/>
+        <path d="M 10 18 L 12 22 L 14 18"/>
+      </svg>
+    </button>
   </div>
-  <div id="galleryComingSoon" aria-hidden="true">coming soon</div>
 </div>
 <script>
 /* Pre-paint the flare button in its correct locked-vs-resting state
@@ -4313,7 +4250,7 @@ document.addEventListener("keydown", (e) => {
 // at moveend.
 const elBottomActions = document.getElementById("bottomActions");
 const elMuseumBtn     = document.getElementById("museumBtn");
-const elBackToMapBtn  = document.getElementById("backToMapBtn");
+const elBackToMapBtn  = document.getElementById("earthBackBtn");
 const GALLERY_LNG_THRESHOLD = -180;
 
 // Bounding box of the wall of frames. Used to dim the chrome when the
@@ -4364,6 +4301,9 @@ elMuseumBtn.addEventListener("click", () => {
 });
 elBackToMapBtn.addEventListener("click", () => {
   if (elGalleryLightbox.classList.contains("open")) closeGalleryLightbox();
+  // Cancel any in-progress star placement so the aim hint and cursor
+  // don't follow the visitor back to earth.
+  if (typeof exitStarPlacementMode === "function") exitStarPlacementMode();
   // Reset the bird simulation so in-flight birds don't pop back in
   // mid-screen when the canvas un-hides during the trip back.
   if (typeof window.__resetBirdFlock === "function") window.__resetBirdFlock();
@@ -6968,16 +6908,23 @@ document.addEventListener("keydown", (e) => {
 // ───────────── HINT ─────────────
 let hintTimer = null;
 let dropPromptHidByHint = false;
+let starPromptHidByHint = false;
 function flashHint(text) {
   hint.textContent = text;
   hint.classList.remove("gone");
-  // The drop prompt sits at the same `bottom` as the hint pill (they share
-  // the unified bottom-zone), so they overlap. Tuck the prompt while the
-  // hint is up; restore it after if the user still hasn't dropped.
+  // The two prompts (drop / star) sit at the same `bottom` as the hint
+  // pill (shared bottom-zone), so they overlap. Tuck whichever prompt
+  // is currently visible while the hint is up; restore it after if the
+  // visitor still hasn't acted on that side.
   const prompt = document.getElementById("dropPrompt");
   if (prompt && !prompt.classList.contains("gone")) {
     prompt.classList.add("gone");
     dropPromptHidByHint = true;
+  }
+  const sPrompt = document.getElementById("starPrompt");
+  if (sPrompt && !sPrompt.classList.contains("gone")) {
+    sPrompt.classList.add("gone");
+    starPromptHidByHint = true;
   }
   clearTimeout(hintTimer);
   hintTimer = setTimeout(() => {
@@ -6985,6 +6932,12 @@ function flashHint(text) {
     if (dropPromptHidByHint) {
       dropPromptHidByHint = false;
       if (prompt && !hasDroppedToday()) prompt.classList.remove("gone");
+    }
+    if (starPromptHidByHint) {
+      starPromptHidByHint = false;
+      if (sPrompt && typeof hasPlantedStarToday === "function" && !hasPlantedStarToday()) {
+        sPrompt.classList.remove("gone");
+      }
     }
   }, 3000);
 }
@@ -6994,6 +6947,13 @@ function hideHint() {
     dropPromptHidByHint = false;
     const prompt = document.getElementById("dropPrompt");
     if (prompt && !hasDroppedToday()) prompt.classList.remove("gone");
+  }
+  if (starPromptHidByHint) {
+    starPromptHidByHint = false;
+    const sPrompt = document.getElementById("starPrompt");
+    if (sPrompt && typeof hasPlantedStarToday === "function" && !hasPlantedStarToday()) {
+      sPrompt.classList.remove("gone");
+    }
   }
 }
 
@@ -7007,6 +6967,19 @@ function syncDropPrompt() {
   else dropPromptEl.classList.remove("gone");
 }
 syncDropPrompt();
+
+// Star prompt — parallel of dropPrompt for the space realm. The CSS
+// hides it outside gallery mode entirely (display:none), so this fn
+// just toggles .gone based on the daily-plant lock. Display switching
+// when the gallery is entered/exited is handled by the body.in-gallery
+// rule.
+const starPromptEl = document.getElementById("starPrompt");
+function syncStarPrompt() {
+  if (!starPromptEl) return;
+  if (hasPlantedStarToday()) starPromptEl.classList.add("gone");
+  else starPromptEl.classList.remove("gone");
+}
+syncStarPrompt();
 
 if (hasDroppedToday()) {
   hint.textContent = "you've left your mark today";
@@ -8233,6 +8206,19 @@ function addStarMarker(star) {
     pane: "popupPane"
   });
 
+  // Hover preview — same first-line tooltip dots use, white-on-navy
+  // pill via the shared .dot-tooltip class. Desktop only (IS_HOVER_DEVICE)
+  // so touch devices don't get a sticky tooltip after every tap.
+  if (IS_HOVER_DEVICE && star.text) {
+    m.bindTooltip(escapeHtml(firstLine(star.text)), {
+      direction: "top",
+      offset: [0, -8],
+      opacity: 1,
+      className: "dot-tooltip",
+      pane: "tooltipPane"
+    });
+  }
+
   m.on("popupopen", () => {
     const el = m.getElement();
     if (el) { const s = el.querySelector(".star"); if (s) s.classList.add("expanded"); }
@@ -8481,7 +8467,7 @@ function syncStarBtn() {
   const planted = hasPlantedStarToday();
   starBtn.classList.toggle("locked", planted);
   const label = planted
-    ? "you've planted your star today"
+    ? "you've already planted your star today"
     : "plant a star in space";
   starBtn.setAttribute("aria-label", label);
   starBtn.setAttribute("title", label);
@@ -8518,7 +8504,7 @@ function exitStarPlacementMode() {
 function requestStar() {
   if (starPlacementMode) { exitStarPlacementMode(); return; }
   if (hasPlantedStarToday()) {
-    flashHint("you've planted your star today");
+    flashHint("you've already planted your star today");
     return;
   }
   enterStarPlacementMode();
@@ -8581,6 +8567,7 @@ async function submitStar() {
 
   closeStarCompose();
   syncStarBtn();
+  syncStarPrompt();
   const m = starMarkers.get(star.id);
   if (m) m.openPopup();
 }
@@ -8672,6 +8659,7 @@ if (IS_DEV_MODE) {
       if (stars[i].mine) stars.splice(i, 1);
     }
     syncStarBtn();
+    syncStarPrompt();
     console.log("%c[dev] resetMyStar: localStorage cleared", "color:#ffffff");
     return "ok";
   };
@@ -9343,27 +9331,17 @@ function refreshOpenStarPopup(starId) {
   pane.style.zIndex = "350";
   pane.classList.add("museum-stars-pane");
 
-  // Stars scattered across a band wider/taller than the wall so the
-  // sky reads as ambient even when the visitor pans a little. Stars
-  // that land inside the wall's bounding box (with a small margin)
-  // are re-rolled, so density is highest around and outside the wall
-  // rather than blocked by the frames.
+  // Stars scattered across a band wider/taller than the gallery view
+  // so the sky reads as ambient even when the visitor pans a little.
+  // The wall-exclusion that used to keep stars off the frames area is
+  // gone now that frames are turned off (SHOW_GALLERY_FRAMES = false)
+  // — the central band is just space, fill it normally.
   const STAR_COUNT = 180;
   const LAT_HALF   = 85;
   const LNG_HALF   = 200;
-  const WALL_LAT_MARGIN = halfGridH + 6;
-  const WALL_LNG_MARGIN = halfGridW + 6;
   for (let i = 0; i < STAR_COUNT; i++) {
-    let lat, lng, tries = 0;
-    do {
-      lat = (Math.random() * 2 - 1) * LAT_HALF;
-      lng = GRID_CENTER_LNG + (Math.random() * 2 - 1) * LNG_HALF;
-      tries++;
-    } while (
-      tries < 8 &&
-      Math.abs(lat) < WALL_LAT_MARGIN &&
-      Math.abs(lng - GRID_CENTER_LNG) < WALL_LNG_MARGIN
-    );
+    const lat = (Math.random() * 2 - 1) * LAT_HALF;
+    const lng = GRID_CENTER_LNG + (Math.random() * 2 - 1) * LNG_HALF;
     // Most stars are 1px, a quarter 2px, a few 3px — varied weight
     // feels less mechanical than uniform dots.
     const r = Math.random();
