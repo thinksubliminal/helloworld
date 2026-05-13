@@ -704,7 +704,7 @@
   }
 
   /* "How it works" modal — fades + slides up. Frosted card matches the
-     existing compose / langOnboard aesthetic. */
+     existing compose aesthetic. */
   #helpModal {
     position: fixed; inset: 0;
     background: rgba(10, 18, 30, 0.55);
@@ -2040,70 +2040,6 @@
     pointer-events: none;
   }
 
-  /* Language onboarding — first-time visit only */
-  #langOnboard {
-    position: fixed;
-    top: 0; right: 0; bottom: 0; left: 0;
-    z-index: 1100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: rgba(10, 25, 41, 0.4);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.5s ease;
-    overflow-y: auto;
-  }
-  #langOnboard.show { opacity: 1; pointer-events: auto; }
-  .lang-onboard-card {
-    margin: auto;
-    background: rgba(255, 255, 255, 0.07);
-    -webkit-backdrop-filter: blur(16px);
-            backdrop-filter: blur(16px);
-    border: 0.5px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 28px 32px 24px;
-    width: min(440px, 92vw);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  }
-  .lang-onboard-eyebrow {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.4);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    margin-bottom: 14px;
-  }
-  .lang-onboard-title {
-    font-size: 20px;
-    font-weight: 400;
-    color: rgba(255, 255, 255, 0.95);
-    margin: 0 0 22px;
-    letter-spacing: -0.01em;
-    line-height: 1.3;
-  }
-  .lang-onboard-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
-  }
-  .lang-pill {
-    background: rgba(255, 255, 255, 0.05);
-    border: 0.5px solid rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.7);
-    padding: 8px 13px;
-    font: inherit;
-    font-size: 12.5px;
-    border-radius: 999px;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, color 0.15s;
-  }
-  .lang-pill:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.25);
-    color: rgba(255, 255, 255, 0.95);
-  }
-
   /* ───────── Heard Around the World panel ───────── */
   /* Static multi-row panel replaced everywhere by the #hwToggle carousel
      so desktop and mobile both show one continent at a time. The
@@ -2485,14 +2421,6 @@
   </div>
 </div>
 
-
-<div id="langOnboard" role="dialog" aria-modal="true" aria-labelledby="langOnboardTitle">
-  <div class="lang-onboard-card">
-    <div class="lang-onboard-eyebrow">Hello, World</div>
-    <h2 id="langOnboardTitle" class="lang-onboard-title">What language do you read in?</h2>
-    <div class="lang-onboard-grid"></div>
-  </div>
-</div>
 
 <div id="geoMsg" role="dialog" aria-modal="true">
   <div class="geo-card">
@@ -6178,33 +6106,6 @@ langScroll.addEventListener("scroll", updateLangFade);
       opt.classList.toggle("active", opt.dataset.code === initial);
     }
   }
-})();
-
-// First-time language onboarding — only shows if the user has never picked one.
-(function maybeShowLangOnboarding() {
-  if (localStorage.getItem(LANG_KEY)) return;
-  const onboard = document.getElementById("langOnboard");
-  const grid = onboard.querySelector(".lang-onboard-grid");
-  // Show "no translation" first, then every language from LANGS.
-  const items = [
-    { code: "off", label: "no translation" },
-    ...LANGS.filter(l => l.code !== "off")
-  ];
-  for (const l of items) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "lang-pill";
-    btn.dataset.code = l.code;
-    btn.textContent = l.label;
-    btn.addEventListener("click", () => {
-      setLang(l.code);
-      onboard.classList.remove("show");
-      // Remove from DOM after the fade-out completes.
-      setTimeout(() => onboard.remove(), 600);
-    });
-    grid.appendChild(btn);
-  }
-  setTimeout(() => onboard.classList.add("show"), 1000);
 })();
 
 function openLangPanel() {
