@@ -16,8 +16,8 @@ no likes.
 - MyMemory API for translation (free, CORS, no signup — see Translation
   section below)
 - localStorage for one-dot-per-day client check, language preference,
-  personal-mute list, and one-cast-per-day client lock
-- Continent attribution for flares/casts derives from
+  and personal-mute list
+- Continent attribution for flares derives from
   `continentFromLatLng()` — see Continent classification section
 
 ## Map
@@ -49,9 +49,8 @@ no likes.
 - Flares additionally trigger this `setView` for an outer-corner
   case at very low zoom (corner 18%, zoom < 3.5) where the flare
   popup is too big to fit even with autoPan's max shift.
-- Cast lines, dot popup widths, flare popup widths, and the
-  Heard panel collapse threshold all share the same 768px
-  mobile cutoff.
+- Dot popup widths, flare popup widths, and the Heard panel
+  collapse threshold all share the same 768px mobile cutoff.
 
 ## Continent classification
 - `continentFromLatLng(lat, lng)` returns a continent for any
@@ -87,18 +86,13 @@ conversations cap at 500 chars total." Specifically:
 - **Flare reply** — 50 chars per reply, 500 chars total across all
   replies on a flare. Atomic budget enforcement via the
   `insert_flare_response` RPC (see Flares section).
-- **Cast question** (the opener) — 100 chars. Not counted toward
-  the 500-char thread budget.
-- **Cast turn** — 50 chars per turn, 500 chars total across all
-  turns on a cast. Atomic budget enforcement via the
-  `insert_cast_turn` RPC (see Cast section).
 
 Client-side validation gates run at: `<textarea maxlength>`, the
 visible counter, the submit-button enable check, and the final
 pre-insert length guard. DB CHECK constraints back the per-message
-caps (1..50 on `flare_responses.text` and `cast_turns.text`; 280 as
-a permissive backstop on the older `messages.text`, `flares.text`,
-`casts.question` columns — UI is the strict surface there).
+caps (1..50 on `flare_responses.text`; 280 as a permissive backstop
+on the older `messages.text` and `flares.text` columns — UI is the
+strict surface there).
 
 For thread-level budgets (the 500-char total), the RPCs are the
 authoritative gate: client-side maxlength shrinks dynamically as
@@ -144,11 +138,7 @@ RPC locks the parent row before reading the running total.
 ## Supabase
 - Project URL: https://sxofvadbeznwgctdzbmk.supabase.co
 - Publishable key is hardcoded in index.html (safe — RLS protects writes)
-- Table: messages (id, text, lat, lng, loc, mood, created_at, view_count, continent)
-  — note: `view_count` is no longer read or written by the client (see Heard
-  Around the World panel below). The column and the
-  `increment_message_view_count(uuid)` RPC remain in the schema as historical
-  artifacts; they can stay or be dropped without affecting the app.
+- Table: messages (id, text, lat, lng, loc, mood, created_at, continent)
 - RLS: anyone can read, anyone can insert. UPDATE is NOT permitted directly.
 - **Polling, not realtime.** All Supabase realtime websocket subscriptions
   were removed to control egress on free tier. The map is refreshed by a
@@ -159,20 +149,7 @@ RPC locks the parent row before reading the running total.
 
 ### One-time migration SQL (run in Supabase SQL editor)
 ```sql
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS view_count integer NOT NULL DEFAULT 0;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS continent text;
-
-CREATE OR REPLACE FUNCTION increment_message_view_count(msg_id uuid)
-RETURNS integer
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  UPDATE messages SET view_count = view_count + 1 WHERE id = msg_id
-  RETURNING view_count;
-$$;
-
-GRANT EXECUTE ON FUNCTION increment_message_view_count(uuid) TO anon, authenticated;
 ```
 
 ## Cloudflare Worker (edge cache for boot reads)
@@ -334,447 +311,6 @@ create policy "anyone can insert flare responses" on flare_responses
 ### Dev
 - Console: `resetMyFlare()` clears today's flare lock.
 
-## Cast
-A third interaction type. A visitor opens someone else's dot popup,
-taps the cast button in the bottom toolbar, and sends a 100-char
-question to that specific person across the ocean. The dot's owner
-answers, and from that point both parties take turns adding short
-replies until they exhaust a shared 500-char budget across the
-back-and-forth. The thread then locks for the day. A gold dashed
-line connects the two dots on the map (marching ants throughout,
-dims to settled amber when the thread closes). One cast per sender
-per day, one cast per receiver per day, cross-continental only.
-
-### Feature flag
-- `IS_CAST_ENABLED` defaults to **true** for all visitors. The URL
-  flag `?cast=0` is kept as an emergency kill switch (e.g., if a
-  bug ships and we need to disable cast UI without a redeploy).
-- Internal naming: previously called "ping"; renamed everywhere
-  (variables, functions, CSS, DB table, localStorage keys). No code
-  references to the old name remain.
-
-### Tables
-- `casts` (id, sender_dot_id, receiver_dot_id, question, created_at).
-  The cast metadata + the original question (the opener — same role
-  as flares.text).
-- `cast_turns` (id, cast_id, speaker_id, text, created_at). Every
-  back-and-forth message after the opener. 50 chars per turn (DB
-  CHECK), 500 chars total per thread (RPC-enforced).
-- `casts.answer` is a deprecated dead column from the previous one-
-  question/one-answer model (2026-05-09 superseded). The current
-  client neither reads nor writes it. It can stay or be dropped
-  later without affecting the app.
-- `sender_dot_id` and `receiver_dot_id` reference `messages.id` by
-  convention (no FK constraint — same client-trust pattern as
-  flares).
-- Daily reset: `casts` and `cast_turns` are both included in the
-  midnight UTC TRUNCATE cron job.
-
-### RLS / constraints — current state (2026-05-09)
-- `casts`:
-  - SELECT public, INSERT public (`question` non-empty,
-    sender/receiver non-null).
-  - **No UPDATE policy.** The previous "first answer wins" policy was
-    dropped when casts moved off the answer column.
-  - DB-level constraints:
-    - `UNIQUE (sender_dot_id)` → one cast per sender per day.
-    - `UNIQUE (receiver_dot_id)` → each dot can be cast to at most
-      once per day.
-    - `CHECK (sender_dot_id != receiver_dot_id)` → can't cast to
-      your own dot.
-- `cast_turns`:
-  - SELECT public.
-  - **No INSERT policy.** All inserts go through the
-    `insert_cast_turn(p_cast_id, p_speaker_id, p_text)` RPC, which:
-    1. Validates the turn is 1–50 chars (raises `P0001
-       reply_invalid_length`).
-    2. Locks the parent `casts` row with `SELECT ... FOR UPDATE`.
-    3. Sums `char_length(text)` across existing turns for the cast.
-       If `existing + new > 500`, raises `P0002 thread_full`
-       (surfaced as "this conversation is closed.").
-    4. Otherwise inserts and returns the row.
-  - DB CHECK: `char_length(text) BETWEEN 1 AND 50`.
-- The 500-char shared budget is **turns-only** — the original cast
-  question is separate. Atomic enforcement at the DB level is
-  essential — without the row lock, two simultaneous turns could
-  both think they have room and overflow the budget.
-
-### Turn alternation
-- Receiver answers first (after the sender's opener).
-- After that, sender ↔ receiver alternate.
-- Alternation is **client-side**: the respond UI is only rendered
-  when it's the visitor's turn. A determined attacker could insert
-  out-of-turn via the RPC, but identity is honor-system everywhere
-  on the site, so this is the same trust model as elsewhere.
-- Inferring the visitor's role:
-  - Receiver → `msg.mine && msg.id === cast.receiver_dot_id` (the
-    visitor's own dot is the cast's target).
-  - Sender → `myDot && myDot.id === cast.sender_dot_id`.
-  - Last speaker → `cast_turns[last].speaker_id`.
-  - It's the visitor's turn if last speaker isn't them AND they're
-    a participant. (Receiver gets the first turn when the thread is
-    empty.)
-
-### Cross-continental rule
-- Sender's dot and receiver's dot must be on different continents.
-  Continent is derived via `continentFromLatLng(lat, lng)` for both
-  dots (with `msg.continent` field used as primary if present, the
-  derived fallback used otherwise — `saveUserMessages()` strips
-  `continent` from localStorage so the user's own dot needs the
-  fallback after reload).
-- Enforcement is **client-side only** — no RLS policy verifies the
-  continents. A determined attacker could insert a same-continent
-  cast directly via the Supabase REST API. Same security gap as
-  flares (PR-2 deferred).
-
-### UI flow
-- Cast button is the rightmost button in the bottom toolbar, after
-  flare. (Was the 4th of five before the Drawing Realm pencil was
-  hidden 2026-05-10; the realm code/CSS/tables are still in place,
-  see Drawing Realm § Status.) Mirrors flare's three-state pattern
-  (`locked` / resting / `.active`) and uses the **flare amber
-  `#ff9e3d`** across all surfaces (toolbar button, in-popup cast
-  trigger icon, rules-modal cast icon, polylines on the map):
-  - **`.locked`** — dim gray, not-allowed cursor. Set when the
-    visitor has not dropped a dot today, or has already cast today.
-  - **Resting** — amber tint, pointer cursor, no glow. Set when the
-    visitor can-cast-today but no valid target popup is open.
-  - **`.active`** — amber border + amber `box-shadow` glow + lighter
-    amber icon. Set when a cross-continental, not-yet-cast-to dot
-    popup is open.
-- `updateCastBtnState()` runs after dot-drop, resetMyDot, boot, and
-  every popup open/close, so the lock state flips live when the
-  visitor's eligibility changes (no refresh required).
-- Tapping the locked or resting button (when conditions fail)
-  surfaces a context-appropriate `flashHint(...)` toast:
-  - No dot dropped → "drop a dot before casting your line"
-  - Already cast today → "your line is already in the water"
-  - No popup open → "open a dot across the ocean to cast"
-- Tapping the active button sets `castFormOpenForId` and rebuilds
-  the open dot popup, which now renders the cast respond-area
-  inline. Q&A reuses the flare-popup classes (`.flare-popup-q`,
-  `.flare-popup-respond-area`, etc.) so the visual treatment
-  matches flare answers exactly.
-- `castFormOpenForId` is **always** cleared on every popupopen
-  (no "preserve when same dot" guard) — that guard previously left
-  a window on mobile where the flag could leak across popups and
-  auto-render the question form in a fresh dot's popup.
-
-### Thread visibility (public)
-- The cast question and every turn in the thread are visible to
-  **every visitor** opening the receiver dot's popup, not just the
-  sender or receiver. The polyline on the map was already public;
-  the thread matches that.
-- `buildCastSection` collapses the previous A/B/D cases into one
-  thread-rendering branch (when `castsByReceiver.get(msg.id)`
-  exists), with the respond UI gated on `viewerIsParticipant &&
-  isMyTurn && !isFull`. Case C — viewer wants to send a NEW cast,
-  popup opened via `castFormOpenForId` — is unchanged and only
-  fires when no cast exists for the dot yet.
-- Action capability (sending the opener, taking a turn) stays
-  scoped to the device whose localStorage matches; content
-  visibility (everyone sees the thread) is universal. Same
-  pattern as flares.
-
-### Map line rendering
-- Polyline drawn in `castLayer` (Leaflet layer group). Endpoints
-  shortened **7 pixels short** of each dot center along the line's
-  own direction (computed in pixel space via `map.project/unproject`,
-  recomputed on every `zoomend` so the offset stays visually
-  consistent at any zoom).
-- Active (thread has budget remaining): bright flare amber `#ff9e3d`,
-  opacity 0.85, dasharray "3 4", marching-ants animation via the
-  `.cast-line-pending` class.
-- Closed (thread budget exhausted, 500 chars used across all turns):
-  muted amber `#a86328`, opacity 0.5 — same dasharray and marching
-  animation, just dimmer color + lower opacity. The marching never
-  stops, by design. The dim transition fires inside
-  `applyCastTurnRow` the moment the new turn pushes total chars to
-  ≥500.
-- Send animation: when sendCast() succeeds,
-  `playCastLineDrawAnimation` tweens the polyline's second endpoint
-  from sender to receiver in lat/lng space over 700ms (ease-out
-  cubic). The marching ants run throughout the draw, so the line
-  appears to extend across the map progressively rather than flash
-  in as a solid line.
-- Antimeridian: lines use the dots' raw longitudes — no ±360
-  shift to take the geographically shortest path across ±180°.
-  An earlier version did the shift so e.g. LA↔Tokyo would draw
-  across the Pacific, but visually the line "left" the map at
-  one edge and reappeared in an off-screen world copy. Drawing
-  in raw lng space keeps every cast line inside one visible
-  rectangle. Tradeoff: true antipodal pairs draw the long way
-  around (LA↔Tokyo via Atlantic+Eurasia). Acceptable — staying
-  on one rectangle reads better in this UI.
-
-### Toolbar icon
-- `assets/cast-icon.svg` (Focus Tool icon attribution: Design Circle,
-  The Noun Project) recreated as a stroked SVG: filled center dot
-  + outer dashed ring (`pathLength="80"`, `dasharray="3 7"` → exactly
-  8 dashes). Marching-ants animation runs continuously on the ring
-  via the `castIconMarch` keyframe, regardless of the button's
-  active state — visually links the toolbar icon to the cast lines
-  on the map.
-
-### One-time migration SQL (pings → casts rename, run if any
-### environment still has the old table name)
-```sql
-ALTER TABLE pings RENAME TO casts;
-
-SELECT cron.unschedule('midnight-utc-reset');
-SELECT cron.schedule(
-  'midnight-utc-reset',
-  '0 0 * * *',
-  'TRUNCATE TABLE flare_responses, flares, messages, casts;'
-);
-
-ALTER POLICY "anyone can read pings"               ON casts RENAME TO "anyone can read casts";
-ALTER POLICY "anyone can insert pings"             ON casts RENAME TO "anyone can insert casts";
-ALTER POLICY "anyone can answer an unanswered ping" ON casts RENAME TO "anyone can answer an unanswered cast";
-```
-
-### Dev
-- Console: `resetMyDot()` and `resetMyFlare()` already exist.
-  No `resetMyCast()` helper yet — clear `localStorage.hw-casted-today`
-  manually if needed during dev.
-
-## Drawing Realm
-A fourth interaction type: a daily collaborative 10×10 mosaic the visitor
-enters via the pencil button in the bottom toolbar. Each visitor gets one
-tile per UTC day (capped at 100/day). The tile's background = the
-visitor's mood color from their dropped dot; their strokes paint on top.
-The mosaic resets at midnight UTC alongside all other daily tables.
-
-### Status — currently hidden in production (2026-05-10)
-- Pencil button is hidden in the bottom toolbar via the HTML `hidden`
-  attribute on `#realmBtn`. The id-selector `#realmBtn { display: flex }`
-  outranks the browser's default `[hidden] { display: none }`, so a
-  specific `#realmBtn[hidden] { display: none }` rule was added to make
-  the attribute take effect.
-- The Drawing Realm section was also removed from the rules modal.
-- All underlying realm code, CSS, DOM, and Supabase tables (`tiles`,
-  `tiles_archive`, `tile_reports`) remain in place. Re-enabling is a
-  one-line revert of the `hidden` attribute plus restoring the rules
-  modal section.
-- Legal pages (terms, privacy) keep their drawing-realm /
-  public-canvas-archive language because `tiles_archive` still holds
-  real archived canvases from prior days. The disclosure remains
-  factually accurate, and coverage is already there if the realm
-  returns.
-
-### Spec lock-ins (durable design decisions, not derivable from code)
-- **Async, not realtime.** No Supabase realtime subscriptions on `tiles`;
-  the mosaic refreshes via the same 30s polling pattern as dots/flares.
-  Chosen explicitly to stay on free tier — broadcasting every stroke
-  would dominate egress under any spike.
-- **Mosaic, not free canvas.** Fixed 100 tiles/day, one per visitor,
-  auto-assigned (the next empty `tile_index` 0–99). Visitor #101+ sees
-  the mosaic in read-only mode.
-- **Tiles always square; grid shape adapts to viewport.** `realmCols ×
-  realmRows = 100` always, but the split is `10×10` on landscape/square
-  viewports and `5×20` on tall portrait (height > 1.4× width). Tile #N
-  sits at a different visual position depending on layout, but the
-  artwork data is the same.
-- **Mood color carries through.** When a visitor enters draw mode, the
-  canvas is painted with their dot's mood color; the saved tile in the
-  mosaic shows that same color + their strokes. The cover gesture
-  (paint over to erase) just means clicking your own mood color in the
-  swatch row. No separate cover swatch.
-- **Drop a dot first.** The realm is gated behind `hasDroppedToday()` —
-  same gate as flares. Tapping the locked pencil button shows a
-  `flashHint` ("drop a dot before drawing"). `syncRealmBtn()` is
-  exposed on `window` and called after every `syncFlareBtn()` so the
-  lock state stays live without a refresh.
-- **Daily artifact / monetization is deferred.** No PNG snapshot, no
-  storage bucket, no commerce pipeline. Tiles get TRUNCATEd nightly
-  along with everything else. The daily-delete privacy promise still
-  holds because there is no permanent record.
-
-### Tables
-- `tiles` (id, tile_index, stroke_data, mood, created_at). One row per
-  drawn tile per day. `stroke_data` is a JSONB array of stroke objects:
-  `[{ color, size, points: [[x,y],...] }, ...]`. Coordinates are
-  normalized 0–1 within the tile so they scale across screen sizes.
-- `mood` is the artist's dropped-dot mood ID (e.g. "joyful", "sad")
-  used by the mosaic renderer to paint the tile's background.
-
-### RLS / constraints (current)
-- `tiles`:
-  - SELECT public.
-  - INSERT requires `tile_index` in `[0, 99]` and `stroke_data` to be a
-    JSON array.
-  - **`UNIQUE (tile_index)` constraint** at the table level enforces
-    "one tile per index per day" atomically. Two concurrent visitors
-    claiming the same empty index produce exactly one success; the
-    loser catches the `23505 unique_violation`, refetches, and retries
-    with the next empty index. Same first-respondent-wins pattern as
-    `flare_responses.flare_id`. The constraint naturally resets each
-    day because the table is truncated at midnight.
-
-### Daily reset
-- Included in the `midnight-utc-reset` pg_cron job alongside
-  `reports, casts, flare_responses, flares, messages, chest_claims`.
-  Source of truth for the cron is `cron.sql` (canonical) and the
-  schema bootstrap lives in `tiles.sql`.
-- **Archive is the exception to the daily-delete promise.** Before the
-  TRUNCATE, the cron does
-  `INSERT INTO tiles_archive ... SELECT ... FROM tiles ON CONFLICT DO NOTHING`
-  so each day's collective canvas is preserved permanently. This is
-  the foundation for any future "view past canvases" or print-sales
-  feature — vector data persists, no rendering pipeline exists yet.
-
-### Archive table (`tiles_archive`)
-- Schema: `(id, day, tile_index, stroke_data, mood, original_created_at, archived_at)`.
-  No `planter_id` / IP / device-ID columns by design — the privacy
-  promise rests on the archive carrying nothing identifying.
-- `UNIQUE (day, tile_index)` constraint + `ON CONFLICT DO NOTHING`
-  in the cron makes the archive insert idempotent (if the cron ever
-  fires twice in a window, no duplicates).
-- RLS: `SELECT` is public (a future client-side "view past day" feature
-  can query without auth). No INSERT/UPDATE/DELETE policy — only the
-  cron job (postgres superuser, bypasses RLS) writes.
-- Storage cost: ~5KB/tile × 100/day × 365 days ≈ 180MB/year.
-  Comfortable on free tier for several years.
-- Privacy/terms text reflects the exception: dots/messages/flares/casts
-  are wiped nightly, the canvas is preserved as a public artwork.
-
-### Polling
-- 30s interval on the mosaic view (matches the rest of the app's
-  egress posture). Polling pauses while in draw mode or lightbox/view
-  mode and resumes on return to the mosaic. The poll only triggers a
-  re-render if `tilesToday.length` changed — minor races (your
-  assigned index getting claimed) are handled by re-running
-  `pickAssigned()`.
-
-### Client identity / one-shot
-- `localStorage.hw-drew-today` stores today's UTC date string
-  (`YYYY-MM-DD`). The presence-check compares against today's date —
-  stale values from previous days are treated as not-drawn so visitors
-  aren't stuck in read-only mode after the midnight reset (the server
-  truncate doesn't clear localStorage; the date check does).
-- Same client-trust honor system as dots/flares/casts: bypassable via
-  incognito. Acceptable tradeoff.
-
-### Visual identity
-- Pencil button is the **5th button** in the bottom toolbar, rightmost.
-  Same 58px round shell as the others, stroked SVG (`viewBox 24 24`).
-  `.locked` class dims it when `!hasDroppedToday()`. **(Currently
-  hidden — see Status above.)**
-- Realm overlay: full-screen frosted glass over the map (matches the
-  rules modal recipe: `rgba(10, 18, 30, 0.55)` + `blur(3px)`). The
-  widget chrome (#topNav / #hwToggle / #bottomActions / leaflet zoom)
-  uses a slightly different recipe: `rgba(8, 17, 25, 0.6)` + `blur(12px)`.
-- Empty tiles in the mosaic = navy (`#0c1828`, matching the page bg),
-  filled tiles = artist's
-  mood color + their strokes. The visitor's own assigned tile renders
-  with their own mood color and a small pencil icon centered inside
-  (same SVG paths as the toolbar button).
-- Grid divider lines: solid `#050c16` (deeper navy than the empty
-  tiles), drawn LAST so they always paint over any stroke that comes
-  right up to the edge. Stroke painting is also clipped per-tile so
-  brush radius can't bleed into a neighbor.
-- Header: title "leave your mark" (44px, bold, near-white) → tight
-  pair with subtitle "100 strangers · 100 tiles · one canvas · wiped
-  at midnight UTC" → larger gap before the dynamic status line
-  ("tap your highlighted tile to begin · X/100 filled" or
-  "you've drawn today · fresh tile at midnight UTC").
-
-### Modes
-- **Mosaic** (default): the 10×10 (or 5×20) grid with the visitor's
-  tile highlighted in their mood color.
-- **Draw mode** (visitor tapped their assigned tile): single full-tile
-  canvas + toolbar (9 mood swatches + black + white, brush S/M/L,
-  done). Default selected color is **black** — high contrast against
-  every mood color. The visitor's own mood swatch gets a small dark
-  dot in its corner (`.is-canvas`) and a tooltip indicating it's also
-  the cover/erase color.
-- **Lightbox view** (visitor tapped any filled tile): one tile shown
-  enlarged with the artist's mood label above. Tap anywhere — canvas,
-  label, or the dark backdrop — to dismiss back to the mosaic.
-
-### Navigation
-- **← back to map** (top-left, plain text link, matches `.back-link`
-  style on the legal pages): always closes the realm entirely.
-  Tapping while in draw mode discards in-progress strokes.
-- **Esc** key: in lightbox → back to mosaic; in draw mode → back to
-  mosaic; in mosaic → close realm.
-- No × button on the lightbox — tap-anywhere-to-dismiss replaces it.
-
-### Tile blur / report (kebab on lightbox)
-- Top-right of the tile lightbox is a kebab button with the same
-  Blur + Report dropdown the dot popup uses. `stopPropagation` is
-  applied to the kebab, the menu, and every menu item so a click
-  inside the menu doesn't bubble up and dismiss the lightbox.
-- **Blur** toggles a personal-mute set in `localStorage` under
-  `hw-muted-tile-ids` (constants: `MUTED_TILES_KEY`, `mutedTileIds`
-  Set). In the mosaic, muted tiles keep their mood-color background
-  but skip rendering the strokes, so the cell reads as "filled but
-  hidden by me," not as empty. Other visitors are unaffected.
-  Per-device, no server state.
-- **Report** fire-and-forget INSERTs into `tile_reports` (`tile_id`
-  + `created_at`, INSERT-only public RLS, no SELECT — admin-only
-  triage via the Supabase dashboard). The menu swaps inline to
-  "reported. thanks." on success or "report failed. try again."
-  on error, then closes.
-- Defensive guards: `loadTiles()` must SELECT `id` (a prior bug
-  omitted it, which poisoned `mutedTileIds` with `undefined` and
-  blurred every tile at once); the localStorage loader filters
-  to non-empty strings so any junk that ever leaks in can never
-  match a real tile UUID.
-
-### One-time migration SQL (current)
-```sql
-CREATE TABLE IF NOT EXISTS tiles (
-  id          uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
-  tile_index  smallint    NOT NULL CHECK (tile_index >= 0 AND tile_index < 100),
-  stroke_data jsonb       NOT NULL,
-  mood        text,
-  created_at  timestamptz DEFAULT now()
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS tiles_tile_index_unique ON tiles (tile_index);
-
-ALTER TABLE tiles ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anyone can read tiles" ON tiles;
-CREATE POLICY "anyone can read tiles" ON tiles FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "anyone can insert tiles" ON tiles;
-CREATE POLICY "anyone can insert tiles" ON tiles
-  FOR INSERT WITH CHECK (
-    tile_index >= 0 AND tile_index < 100
-    AND jsonb_typeof(stroke_data) = 'array'
-  );
-
--- Tile reports (admin-only triage signal from the lightbox kebab).
-CREATE TABLE IF NOT EXISTS tile_reports (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  tile_id uuid NOT NULL,
-  created_at timestamptz DEFAULT now()
-);
-ALTER TABLE tile_reports ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anyone can insert tile reports" ON tile_reports
-  FOR INSERT WITH CHECK (true);
--- No SELECT policy on purpose: tile reports are admin-only signals.
-
--- Update the midnight cron to include tiles and tile_reports. Idempotent
--- (cron.schedule replaces in place when the jobname matches). NOTE: the
--- canonical schedule lives in `cron.sql` and also runs the
--- tiles → tiles_archive copy before the truncate.
-SELECT cron.schedule(
-  'midnight-utc-reset',
-  '0 0 * * *',
-  $$ TRUNCATE TABLE reports, tile_reports, casts, flare_responses, flares, messages, chest_claims, tiles; $$
-);
-```
-
-### Dev
-- Console (dev mode): `resetMyTile()` clears `localStorage.hw-drew-today`
-  so a fresh tile can be drawn from the same browser without waiting
-  for midnight or wiping the table server-side.
-- Server-side wipe (when testing layout from scratch):
-  `TRUNCATE TABLE tiles;` in the Supabase SQL editor.
-
 ## Heard Around the World panel
 - Bottom-left frosted-glass card showing a rotating selection of dots,
   sampled with a **random-weighted-recent** algorithm (newer dots more
@@ -782,11 +318,7 @@ SELECT cron.schedule(
   every 30s (`HW_ROTATE_MS`).
 - Pool: most-recent 30 dots per continent (`HW_CANDIDATE_POOL`), up to 7
   rows displayed (`HW_MAX_ROWS`).
-- Replaced the previous "most-viewed dot per continent" model — that
-  required a `view_count` UPDATE realtime broadcast on every popup open,
-  which was the dominant source of realtime quota burn. Random-weighted-
-  recent is purely client-side: zero database round-trips, zero realtime
-  traffic.
+- Pure client-side: zero database round-trips, zero realtime traffic.
 - Continent is derived in `continentFromLatLng()` (bbox cascade — no API).
   Stored on insert; client-side fallback handles older rows where the column
   is NULL.
@@ -841,8 +373,8 @@ SELECT cron.schedule(
   what. No reason field in v1; if triage signal becomes needed, add
   a `reason text` column and an enum-style dropdown in the menu.
 - `reports` is included in the midnight UTC TRUNCATE alongside
-  `messages` / `flares` / `casts` / etc. — reports older than 24h
-  are useless context anyway (the underlying message is gone).
+  `messages` / `flares` / etc. — reports older than 24h are useless
+  context anyway (the underlying message is gone).
 - Triage workflow: scan `SELECT message_id, count(*) FROM reports
   GROUP BY message_id ORDER BY count(*) DESC` during launch / spike
   windows; `DELETE FROM messages WHERE id IN (...)` for anything
@@ -872,7 +404,7 @@ CREATE POLICY "anyone can insert reports" ON reports
 SELECT cron.schedule(
   'midnight-utc-reset',
   '0 0 * * *',
-  $$ TRUNCATE TABLE reports, casts, flare_responses, flares, messages, chest_claims; $$
+  $$ TRUNCATE TABLE reports, flare_responses, flares, messages, chest_claims; $$
 );
 ```
 
@@ -923,11 +455,9 @@ SELECT cron.schedule(
 ## Midnight UTC reset
 - Authoritative reset is server-side via Supabase `pg_cron`. Job
   `midnight-utc-reset` runs
-  `TRUNCATE TABLE reports, tile_reports, casts, flare_responses, flares, messages, chest_claims, tiles`
+  `TRUNCATE TABLE reports, flare_responses, flares, message_responses, messages, chest_claims`
   at `0 0 * * *` (00:00 UTC daily). pg_cron in Supabase runs in UTC.
-  (`cron.sql` is the canonical schedule and also runs the
-  tiles → tiles_archive copy before the TRUNCATE; verify it
-  includes `tile_reports` before relying on the truncate above.)
+  `cron.sql` is the canonical schedule.
 - **Reset countdown amber-under-one-hour**: the visible countdown
   fades to flare amber `#ff9e3d` when less than one hour remains
   until midnight UTC. Ambient color cue only — no animation, no
@@ -951,9 +481,6 @@ SELECT cron.schedule(
 - Console (dev mode only): `resetMyDot()` clears localStorage to allow
   another drop for testing
 - Console (dev mode only): `resetMyFlare()` clears today's flare lock
-- Console (dev mode only): `resetMyTile()` clears today's drawing-realm
-  lock (`hw-drew-today`) so a new tile can be drawn from the same
-  browser without waiting for midnight
 - Helpers are wired off `IS_DEV_MODE` near the top of the script in
   `index.html` — single source of truth, easy to extend if more dev-only
   tooling is needed later.
