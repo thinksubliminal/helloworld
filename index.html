@@ -1290,6 +1290,146 @@
   }
   #flareBtn svg { width: 22px; height: 22px; display: block; }
 
+  /* Gallery lightbox — opens when a visitor taps an art frame on the map.
+     Tap anywhere (backdrop, art, the close × or ESC) dismisses back to
+     the map. */
+  #galleryLightbox {
+    position: fixed; inset: 0;
+    background: rgba(8, 15, 25, 0.74);
+    -webkit-backdrop-filter: blur(5px);
+            backdrop-filter: blur(5px);
+    z-index: 1200;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  #galleryLightbox.open { display: flex; }
+  body.gallery-lightbox-active { overflow: hidden; }
+  .gallery-close {
+    position: absolute;
+    top: 24px; right: 24px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(20, 30, 45, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+  }
+  .gallery-close:hover {
+    background: rgba(20, 30, 45, 0.9);
+    color: #fff;
+  }
+  /* Container holds either an inline <svg> (real artist, framed with the
+     embedded image) or an <img> pointing at a sample SVG (placeholder).
+     The inner element gets the visual chrome (radius, shadow). */
+  .gallery-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: 64vh;
+    max-width: 92vw;
+  }
+  .gallery-art > svg,
+  .gallery-art > img {
+    display: block;
+    max-height: 64vh;
+    max-width: 92vw;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1),
+                0 12px 50px rgba(0, 0, 0, 0.5);
+  }
+  .gallery-info {
+    margin-top: 20px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.95);
+    max-width: 460px;
+    padding: 0 20px;
+  }
+  .gallery-artist {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 4px 0;
+    color: rgba(255, 255, 255, 0.96);
+  }
+  .gallery-title-year {
+    font-size: 13px;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 0;
+  }
+  .gallery-bio {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.5;
+    margin: 12px 0 0 0;
+  }
+  .gallery-link {
+    display: inline-block;
+    margin-top: 14px;
+    font-size: 13px;
+    color: #ff9e3d;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+  }
+  .gallery-link:hover { text-decoration: underline; }
+  .gallery-hint {
+    margin-top: 18px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.04em;
+  }
+
+  /* Frames fade in once the visitor is inside the gallery band
+     (lng < -180). Without this, worldCopyJump renders a duplicate
+     wall at lng -90 — well inside the default viewport — so the
+     frames would flash on the home map. Hover/tap adds a golden
+     drop-shadow that hugs the frame's transparent regions. */
+  .gallery-frame {
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.7s ease, filter 0.25s ease;
+    will-change: transform, opacity;
+  }
+  body.in-gallery .gallery-frame { opacity: 1; }
+  /* While the rocket flight is in motion, keep frames at 0 even if
+     the lng threshold has already been crossed — otherwise frames
+     fade IN while the overlay-pane is fading OUT, with a visible
+     ghost during the overlap. */
+  body.leaving-earth .gallery-frame { opacity: 0; }
+  .gallery-frame:hover,
+  .gallery-frame:active {
+    filter: drop-shadow(0 0 14px rgba(245, 210, 130, 0.6));
+  }
+  /* Museum starfield — pulses softly behind the frames only while the
+     visitor is inside the gallery. Lives in a custom Leaflet pane at
+     z-index 350 (between tilePane 200 and overlayPane 400) so it sits
+     reliably below the framed art. */
+  .museum-stars-pane {
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 1.2s ease 0.4s;
+  }
+  body.in-gallery .museum-stars-pane { opacity: 1; }
+  .museum-star {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    animation: museumStarPulse var(--dur, 4s) ease-in-out var(--delay, 0s) infinite;
+  }
+  @keyframes museumStarPulse {
+    0%, 100% { opacity: 0.15; }
+    50%      { opacity: 0.75; }
+  }
+
   /* Globe modal — full-screen blurred overlay over the map. The card
      grows to a tall narrow column with internal scrolling so it can
      hold mood stats at the top plus a scrollable list of every
