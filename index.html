@@ -2062,10 +2062,28 @@
     flex-direction: column;
     gap: 10px;
     max-height: 220px;
-    overflow-y: auto;
+    /* overflow-y: scroll (not auto) reserves the gutter so the scrollbar
+       is always visible — matches the lang-panel-scroll recipe. */
+    overflow-y: scroll;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
     /* A bit of room at the bottom so the last reply isn't visually
        swallowed by the fade. */
     padding-bottom: 6px;
+  }
+  .flare-popup-response-list::-webkit-scrollbar {
+    width: 6px;
+    -webkit-appearance: none;
+  }
+  .flare-popup-response-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .flare-popup-response-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+  .flare-popup-response-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
   }
   @media (max-width: 768px) {
     .flare-popup-response-list { max-height: 150px; }
