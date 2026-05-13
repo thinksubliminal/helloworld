@@ -7899,11 +7899,9 @@ function syncDropBtn() {
 //   1. user taps the flare button → GPS check (proves they're real; coords
 //      are NOT used for the flare's position)
 //   2. placement mode is enabled → desktop: cursor tracks across the map with
-//      a floating city label, click to place. Mobile: press-and-hold to aim
-//      (label tracks the finger), lift to launch.
+//      a floating city label, click to place. Mobile: drag to pan the map,
+//      then tap (no drag) to drop at the tap point.
 let flarePlacementMode = false;
-let touchAiming = false;
-let lastAimLatLng = null;
 const aimLabelEl = document.getElementById("flareAimLabel");
 
 function pinHint(text) {
@@ -7948,23 +7946,13 @@ function enterFlarePlacementMode() {
   flarePlacementMode = true;
   document.body.classList.add("flare-placing");
   flareBtn.classList.add("active");
-  // Touch and desktop have different aim mechanics, so the hint differs too.
   pinHint(IS_HOVER_DEVICE
     ? "tap anywhere on the map to place your flare"
-    : "press and hold to aim · lift to launch");
-  // On touch we suspend map drag/zoom so press-and-hold lands as an aim gesture
-  // instead of panning the map. Desktop keeps drag enabled (so the user can
-  // pan around looking for a target before clicking).
-  if (!IS_HOVER_DEVICE) {
-    map.dragging.disable();
-    if (map.touchZoom) map.touchZoom.disable();
-  }
+    : "drag to aim · tap to drop");
 }
 function exitFlarePlacementMode() {
   if (!flarePlacementMode) return;
   flarePlacementMode = false;
-  touchAiming = false;
-  lastAimLatLng = null;
   // NOTE: don't clear planterLatLng here — on the success path this fires
   // BEFORE openFlareCompose, so submitFlare needs the captured value to be
   // intact. Each new requestFlare() recaptures via geolocation, so stale
@@ -7973,10 +7961,6 @@ function exitFlarePlacementMode() {
   flareBtn.classList.remove("active");
   hideHint();
   hideAimLabel();
-  if (!IS_HOVER_DEVICE) {
-    map.dragging.enable();
-    if (map.touchZoom) map.touchZoom.enable();
-  }
 }
 
 // Captured at the moment the user taps the flare button — used as the
@@ -8081,51 +8065,47 @@ if (IS_HOVER_DEVICE) {
   });
 }
 
-// ── Aim handlers — touch (press-and-hold, lift to launch) ──
-// Bound to the map container directly because Leaflet's own touch events
-// don't expose pointer-down vs pointer-up cleanly enough for this gesture.
+// ── Aim handlers — touch (drag to pan, tap to drop) ──
+// Map panning stays enabled in placement mode; we distinguish a tap
+// (drop the flare) from a pan (do nothing) by movement distance.
+// Passive listeners — we never preventDefault, so Leaflet's own touch
+// handlers can drive the pan/zoom.
 if (!IS_HOVER_DEVICE) {
   const mapEl = map.getContainer();
-
-  function pointFromTouch(touch) {
-    const rect = mapEl.getBoundingClientRect();
-    return {
-      point: L.point(touch.clientX - rect.left, touch.clientY - rect.top),
-      clientX: touch.clientX,
-      clientY: touch.clientY
-    };
-  }
+  const TAP_MOVE_MAX_PX = 10;
+  const TAP_TIME_MAX_MS = 500;
+  let tapStartX = 0, tapStartY = 0, tapStartT = 0, tapInvalid = true;
 
   mapEl.addEventListener("touchstart", (e) => {
-    if (!flarePlacementMode) return;
-    if (e.touches.length !== 1) return;
-    e.preventDefault();
-    touchAiming = true;
-    document.body.classList.add("flare-aiming-active");
-    const { point, clientX, clientY } = pointFromTouch(e.touches[0]);
-    const latlng = map.containerPointToLatLng(point);
-    lastAimLatLng = latlng;
-    updateAimLabel(clientX, clientY, latlng);
-  }, { passive: false });
+    if (!flarePlacementMode) { tapInvalid = true; return; }
+    if (e.touches.length !== 1) { tapInvalid = true; return; }
+    const t = e.touches[0];
+    tapStartX = t.clientX;
+    tapStartY = t.clientY;
+    tapStartT = Date.now();
+    tapInvalid = false;
+  }, { passive: true });
 
   mapEl.addEventListener("touchmove", (e) => {
-    if (!flarePlacementMode || !touchAiming) return;
-    e.preventDefault();
-    const { point, clientX, clientY } = pointFromTouch(e.touches[0]);
-    const latlng = map.containerPointToLatLng(point);
-    lastAimLatLng = latlng;
-    updateAimLabel(clientX, clientY, latlng);
-  }, { passive: false });
+    if (tapInvalid) return;
+    const t = e.touches[0];
+    if (!t) { tapInvalid = true; return; }
+    if (Math.hypot(t.clientX - tapStartX, t.clientY - tapStartY) > TAP_MOVE_MAX_PX) {
+      tapInvalid = true;
+    }
+  }, { passive: true });
 
-  mapEl.addEventListener("touchend", () => {
-    if (!flarePlacementMode || !touchAiming) return;
-    touchAiming = false;
-    document.body.classList.remove("flare-aiming-active");
-    const ll = lastAimLatLng;
-    if (!ll) { hideAimLabel(); return; }
+  mapEl.addEventListener("touchend", (e) => {
+    if (!flarePlacementMode || tapInvalid) return;
+    tapInvalid = true;
+    if (Date.now() - tapStartT > TAP_TIME_MAX_MS) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const rect = mapEl.getBoundingClientRect();
+    const point = L.point(t.clientX - rect.left, t.clientY - rect.top);
+    const ll = map.containerPointToLatLng(point);
     if (!isCanonicalEarthLng(ll.lng)) {
       flashHint("come back to the world to place your flare");
-      hideAimLabel();
       return;
     }
     const continent = continentFromLatLng(ll.lat, ll.lng);
@@ -8133,12 +8113,7 @@ if (!IS_HOVER_DEVICE) {
     openFlareCompose(ll, continent);
   });
 
-  mapEl.addEventListener("touchcancel", () => {
-    if (!flarePlacementMode) return;
-    touchAiming = false;
-    document.body.classList.remove("flare-aiming-active");
-    hideAimLabel();
-  });
+  mapEl.addEventListener("touchcancel", () => { tapInvalid = true; });
 }
 
 // ESC cancels placement.
@@ -8484,8 +8459,6 @@ const starCancelBtn = document.getElementById("starCancelBtn");
 const starBtn = document.getElementById("starBtn");
 
 let starPlacementMode = false;
-let starTouchAiming = false;
-let starLastAimLatLng = null;
 let pendingStarLatLng = null;
 
 function showStarError(text) {
@@ -8522,25 +8495,15 @@ function enterStarPlacementMode() {
   starBtn.classList.add("active");
   pinHint(IS_HOVER_DEVICE
     ? "tap anywhere in space to plant your star"
-    : "press and hold to aim · lift to plant");
-  if (!IS_HOVER_DEVICE) {
-    map.dragging.disable();
-    if (map.touchZoom) map.touchZoom.disable();
-  }
+    : "drag to aim · tap to drop");
 }
 function exitStarPlacementMode() {
   if (!starPlacementMode) return;
   starPlacementMode = false;
-  starTouchAiming = false;
-  starLastAimLatLng = null;
   document.body.classList.remove("flare-placing");
   starBtn.classList.remove("active");
   hideHint();
   hideAimLabel();
-  if (!IS_HOVER_DEVICE) {
-    map.dragging.enable();
-    if (map.touchZoom) map.touchZoom.enable();
-  }
 }
 
 function requestStar() {
@@ -8640,44 +8603,43 @@ if (IS_HOVER_DEVICE) {
   });
 }
 
-// ── Star aim handlers — touch ──
+// ── Star aim handlers — touch (drag to pan, tap to drop) ──
+// Same tap-vs-pan distinction as flares; map dragging stays enabled
+// throughout placement mode.
 if (!IS_HOVER_DEVICE) {
   const mapEl = map.getContainer();
-
-  function starPointFromTouch(touch) {
-    const rect = mapEl.getBoundingClientRect();
-    return {
-      point: L.point(touch.clientX - rect.left, touch.clientY - rect.top),
-      clientX: touch.clientX,
-      clientY: touch.clientY
-    };
-  }
+  const TAP_MOVE_MAX_PX = 10;
+  const TAP_TIME_MAX_MS = 500;
+  let tapStartX = 0, tapStartY = 0, tapStartT = 0, tapInvalid = true;
 
   mapEl.addEventListener("touchstart", (e) => {
-    if (!starPlacementMode) return;
-    if (e.touches.length !== 1) return;
-    e.preventDefault();
-    starTouchAiming = true;
-    document.body.classList.add("flare-aiming-active");
-    const { point, clientX, clientY } = starPointFromTouch(e.touches[0]);
-    starLastAimLatLng = map.containerPointToLatLng(point);
-    updateStarAimLabel(clientX, clientY);
-  }, { passive: false });
+    if (!starPlacementMode) { tapInvalid = true; return; }
+    if (e.touches.length !== 1) { tapInvalid = true; return; }
+    const t = e.touches[0];
+    tapStartX = t.clientX;
+    tapStartY = t.clientY;
+    tapStartT = Date.now();
+    tapInvalid = false;
+  }, { passive: true });
 
   mapEl.addEventListener("touchmove", (e) => {
-    if (!starPlacementMode || !starTouchAiming) return;
-    e.preventDefault();
-    const { point, clientX, clientY } = starPointFromTouch(e.touches[0]);
-    starLastAimLatLng = map.containerPointToLatLng(point);
-    updateStarAimLabel(clientX, clientY);
-  }, { passive: false });
+    if (tapInvalid) return;
+    const t = e.touches[0];
+    if (!t) { tapInvalid = true; return; }
+    if (Math.hypot(t.clientX - tapStartX, t.clientY - tapStartY) > TAP_MOVE_MAX_PX) {
+      tapInvalid = true;
+    }
+  }, { passive: true });
 
-  mapEl.addEventListener("touchend", () => {
-    if (!starPlacementMode || !starTouchAiming) return;
-    starTouchAiming = false;
-    document.body.classList.remove("flare-aiming-active");
-    const ll = starLastAimLatLng;
-    if (!ll) return;
+  mapEl.addEventListener("touchend", (e) => {
+    if (!starPlacementMode || tapInvalid) return;
+    tapInvalid = true;
+    if (Date.now() - tapStartT > TAP_TIME_MAX_MS) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const rect = mapEl.getBoundingClientRect();
+    const point = L.point(t.clientX - rect.left, t.clientY - rect.top);
+    const ll = map.containerPointToLatLng(point);
     if (!isCanonicalSpaceLng(ll.lng)) {
       flashHint("come back to space to place your star");
       return;
@@ -8686,11 +8648,7 @@ if (!IS_HOVER_DEVICE) {
     openStarCompose(ll);
   });
 
-  mapEl.addEventListener("touchcancel", () => {
-    if (!starPlacementMode) return;
-    starTouchAiming = false;
-    document.body.classList.remove("flare-aiming-active");
-  });
+  mapEl.addEventListener("touchcancel", () => { tapInvalid = true; });
 }
 
 // ESC cancels star placement, parallel to flare ESC.
