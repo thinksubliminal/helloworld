@@ -5497,6 +5497,21 @@ function appendDotThread(msg, wrap) {
     wrap.appendChild(threadContainer.firstChild);
   }
 
+  // Bottom-fade hint on the reply list — iOS Safari hides the native
+  // scrollbar at rest, so the gradient is our persistent "more below"
+  // cue. Parallel to the flare/star popup wiring.
+  const respWrap = wrap.querySelector(".flare-popup-response-list-wrap");
+  const respList = wrap.querySelector(".flare-popup-response-list");
+  if (respWrap && respList) {
+    const updateFade = () => {
+      const remaining = respList.scrollHeight - respList.clientHeight - respList.scrollTop;
+      respWrap.classList.toggle("show-fade", remaining > 4);
+    };
+    respList.addEventListener("scroll", updateFade);
+    requestAnimationFrame(updateFade);
+    setTimeout(updateFade, 350);
+  }
+
   // Async translation pass for existing replies.
   if (wantTranslate && responses.length > 0) {
     const respEls = wrap.querySelectorAll(".flare-popup-response");
