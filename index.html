@@ -8005,10 +8005,29 @@ function requestFlare() {
 }
 flareBtn.addEventListener("click", requestFlare);
 
+// Canonical-world guards. With worldCopyJump enabled, a click far east
+// or west of the canonical view lands in a duplicate world copy —
+// visually identical but with out-of-band lng. Reject those so flares
+// and stars don't get stored at phantom coordinates.
+//   - Earth (flares): canonical lng is [-180, 180].
+//   - Space (stars): canonical lng is GRID_CENTER_LNG ± 180.
+function isCanonicalEarthLng(lng) {
+  return lng >= -180 && lng <= 180;
+}
+function isCanonicalSpaceLng(lng) {
+  return lng >= GRID_CENTER_LNG - 180 && lng <= GRID_CENTER_LNG + 180;
+}
+
 // ── Aim handlers — desktop (hover + click) ──
 if (IS_HOVER_DEVICE) {
   map.on("mousemove", (e) => {
     if (!flarePlacementMode) return;
+    // Hide aim label when the cursor wanders into a world copy — the
+    // crosshair stops "tracking" anything placeable.
+    if (!isCanonicalEarthLng(e.latlng.lng)) {
+      hideAimLabel();
+      return;
+    }
     updateAimLabel(e.originalEvent.clientX, e.originalEvent.clientY, e.latlng);
   });
   map.on("mouseout", () => {
@@ -8025,6 +8044,10 @@ if (IS_HOVER_DEVICE) {
   map.on("click", (e) => {
     if (!flarePlacementMode) return;
     const ll = e.latlng;
+    if (!isCanonicalEarthLng(ll.lng)) {
+      flashHint("come back to the world to place your flare");
+      return;
+    }
     const continent = continentFromLatLng(ll.lat, ll.lng);
     exitFlarePlacementMode();
     openFlareCompose(ll, continent);
@@ -8073,6 +8096,11 @@ if (!IS_HOVER_DEVICE) {
     document.body.classList.remove("flare-aiming-active");
     const ll = lastAimLatLng;
     if (!ll) { hideAimLabel(); return; }
+    if (!isCanonicalEarthLng(ll.lng)) {
+      flashHint("come back to the world to place your flare");
+      hideAimLabel();
+      return;
+    }
     const continent = continentFromLatLng(ll.lat, ll.lng);
     exitFlarePlacementMode();
     openFlareCompose(ll, continent);
@@ -8567,20 +8595,6 @@ starCompose.addEventListener("click", (e) => {
 });
 starBtn.addEventListener("click", requestStar);
 
-// Wrap any latlng back into the gallery's longitude band (centered
-// at GRID_CENTER_LNG = -450). The map uses worldCopyJump so a click
-// at e.g. lng=-90 (earth-Americas) is the same visual spot as
-// lng=-450 (gallery-Americas). Without normalizing, a star planted
-// from earth-side coords would store at lng=-90 and read as a star
-// on earth in the DB — invisible on the live map (stars pane is
-// gallery-only) but untidy. Wrap to the canonical space copy.
-function normalizeToGalleryLng(latlng) {
-  let lng = latlng.lng;
-  while (lng > GRID_CENTER_LNG + 180) lng -= 360;
-  while (lng < GRID_CENTER_LNG - 180) lng += 360;
-  return L.latLng(latlng.lat, lng);
-}
-
 // ── Star aim handlers — desktop ──
 if (IS_HOVER_DEVICE) {
   map.on("mousemove", (e) => {
@@ -8592,7 +8606,11 @@ if (IS_HOVER_DEVICE) {
   });
   map.on("click", (e) => {
     if (!starPlacementMode) return;
-    const ll = normalizeToGalleryLng(e.latlng);
+    const ll = e.latlng;
+    if (!isCanonicalSpaceLng(ll.lng)) {
+      flashHint("come back to space to place your star");
+      return;
+    }
     exitStarPlacementMode();
     openStarCompose(ll);
   });
@@ -8630,8 +8648,12 @@ if (!IS_HOVER_DEVICE) {
     document.body.classList.remove("flare-aiming-active");
     const ll = starLastAimLatLng;
     if (!ll) return;
+    if (!isCanonicalSpaceLng(ll.lng)) {
+      flashHint("come back to space to place your star");
+      return;
+    }
     exitStarPlacementMode();
-    openStarCompose(normalizeToGalleryLng(ll));
+    openStarCompose(ll);
   });
 
   mapEl.addEventListener("touchcancel", () => {
