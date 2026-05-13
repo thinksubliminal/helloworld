@@ -8479,20 +8479,11 @@ function updateFlareCounter() {
 function openFlareCompose(latlng, continent) {
   pendingFlareLatLng = latlng;
   flareComposeText.value = "";
-  // Reads as "sending a flare to TOKYO, ASIA" (city + continent). Optimistic
-  // hardcoded value first, then async upgrade from the BigDataCloud API.
-  const setTarget = (raw) => {
-    const c = (raw || "").split(",")[0].trim();
-    flareComposeTarget.textContent = c
-      ? `sending a flare to ${c}, ${continent}`
-      : `sending a flare to ${continent}`;
-  };
-  setTarget(nearestCity(latlng.lat, latlng.lng));
-  reverseGeocode(latlng.lat, latlng.lng).then(real => {
-    if (flareCompose.classList.contains("open") && pendingFlareLatLng === latlng) {
-      setTarget(real);
-    }
-  });
+  // Dialog string matches the aim label the user just saw (hardcoded
+  // CITIES for land, ocean name for water). reverseGeocode still runs
+  // on submit so the saved flare.loc gets the best available precision —
+  // it just doesn't drive what shows in this dialog anymore.
+  flareComposeTarget.textContent = `sending a flare to ${aimTextForLatLng(latlng)}`;
   clearFlareError();
   updateFlareCounter();
   flareCompose.classList.add("open");
@@ -8622,18 +8613,19 @@ function pinHint(text) {
   clearTimeout(hintTimer);
 }
 
-function updateAimLabel(clientX, clientY, latlng) {
-  if (!aimLabelEl) return;
-  // Synchronous land-vs-water detect via the bbox cascade — fast enough to
-  // run on every mousemove. Water gets the named body; land gets the nearest
-  // hardcoded city (the API would melt under per-frame calls, and the city
-  // is good enough for "where am I roughly aiming"). Compose card / submit
-  // still use the BigDataCloud API for precise names.
+function aimTextForLatLng(latlng) {
+  // Same source used by the aim label tooltip — fast, hardcoded CITIES
+  // table for land, oceanFromLatLng for water. Compose card reuses this
+  // so the dialog string matches what the user just saw.
   const overWater = continentBBox(latlng.lat, latlng.lng) === null;
-  const txt = overWater
+  return overWater
     ? oceanFromLatLng(latlng.lat, latlng.lng)
     : nearestCity(latlng.lat, latlng.lng);
-  aimLabelEl.textContent = txt;
+}
+
+function updateAimLabel(clientX, clientY, latlng) {
+  if (!aimLabelEl) return;
+  aimLabelEl.textContent = aimTextForLatLng(latlng);
   aimLabelEl.style.left = clientX + "px";
   aimLabelEl.style.top = clientY + "px";
   aimLabelEl.classList.add("show");
