@@ -4836,27 +4836,76 @@ function addDotMarker(msg) {
       className: "dot-tooltip"
     });
   }
-  // Override Leaflet's default click → openPopup so we can do an
-  // explicit smooth zoom-in for top-edge dots before opening. The
-  // popup's autoPan ([20, 20] padding) handles left/right/bottom
-  // slight overflow on its own, but at low zoom maxBoundsViscosity=1.0
-  // blocks the northward pan that a top-edge popup needs to fit
-  // (the visible top is already at VERT_BOUND, autoPan returns zero
-  // movement, popup stays clipped at the top). This mirrors the
-  // same fix applied on flare clicks.
+  // Override Leaflet's default click → openPopup so we can pull
+  // off-frame popups into view before opening. Full parity with the
+  // flare click handler — same thresholds, same motion curves:
+  //
+  //   • Mobile, ANY zoom → always pan/zoom so the dot lands at ~65%
+  //     down the screen, popup opens cleanly above.
+  //   • Desktop, top-edge (top 25%) and zoom < 5 → explicit smooth
+  //     zoom+offset; autoPan can't resolve this because
+  //     maxBoundsViscosity=1.0 clamps the map at VERT_BOUND.
+  //   • Desktop, outer-corner (within 18% of any edge) and zoom < 3.5
+  //     → same explicit zoom+offset; at very low zoom the popup is
+  //     too big for autoPan's max shift to fit.
+  //   • Otherwise → open immediately; popup's own autoPan handles
+  //     subtle nudges.
+  //
+  // Thresholds intentionally match the flare handler — if you tune
+  // one, tune both. See the flare m.off("click") block for the
+  // canonical comments on each branch.
+  const DOT_TAP_MIN_ZOOM = 5;
   m.off("click").on("click", () => {
     if (m.isPopupOpen()) { m.closePopup(); return; }
-    const dotPoint = map.latLngToContainerPoint([msg.lat, msg.lng]);
+
+    const isMobile = window.innerWidth < 768;
     const size = map.getSize();
-    const inTopEdge = dotPoint.y < size.y * 0.25;
-    const needsZoomIn = inTopEdge && map.getZoom() < 5;
+
+    if (isMobile) {
+      if (map.getZoom() < DOT_TAP_MIN_ZOOM) {
+        const dotWorld = map.project([msg.lat, msg.lng], DOT_TAP_MIN_ZOOM);
+        const targetCenter = map.unproject(
+          L.point(dotWorld.x, dotWorld.y - size.y * 0.15),
+          DOT_TAP_MIN_ZOOM
+        );
+        map.flyTo(targetCenter, DOT_TAP_MIN_ZOOM, {
+          duration: 0.5,
+          easeLinearity: 0.25
+        });
+      } else {
+        const dotPoint = map.latLngToContainerPoint([msg.lat, msg.lng]);
+        const targetCenter = map.containerPointToLatLng(
+          L.point(dotPoint.x, dotPoint.y - size.y * 0.15)
+        );
+        map.panTo(targetCenter, {
+          animate: true,
+          duration: 0.35,
+          easeLinearity: 0.25
+        });
+      }
+      map.once("moveend", () => m.openPopup());
+      return;
+    }
+
+    const dotPoint = map.latLngToContainerPoint([msg.lat, msg.lng]);
+    const TOP_EDGE_PCT = 0.25;
+    const OUTER_CORNER_PCT = 0.18;
+    const SEVERE_LOW_ZOOM = 3.5;
+    const inTopEdge = dotPoint.y < size.y * TOP_EDGE_PCT;
+    const inOuterCorner =
+      dotPoint.x < size.x * OUTER_CORNER_PCT ||
+      dotPoint.x > size.x * (1 - OUTER_CORNER_PCT) ||
+      dotPoint.y < size.y * OUTER_CORNER_PCT ||
+      dotPoint.y > size.y * (1 - OUTER_CORNER_PCT);
+    const needsZoomIn =
+      (inTopEdge && map.getZoom() < DOT_TAP_MIN_ZOOM) ||
+      (inOuterCorner && map.getZoom() < SEVERE_LOW_ZOOM);
+
     if (!needsZoomIn) {
       m.openPopup();
       return;
     }
-    // setView (not flyTo) → no bounce. +0.5 zoom gives enough
-    // vertical pan headroom to apply the 10% offset even at very
-    // low zoom where the visible top sits at VERT_BOUND.
+
     const targetZoom = Math.max(map.getZoom() + 0.5, 4);
     const dotWorld = map.project([msg.lat, msg.lng], targetZoom);
     const targetCenter = map.unproject(

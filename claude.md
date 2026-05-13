@@ -46,9 +46,14 @@ no likes.
   offset, 0.45s ease, NO bounce — `setView` not `flyTo`) before
   opening. Same fix in two places; if you change the threshold,
   change both.
-- Flares additionally trigger this `setView` for an outer-corner
-  case at very low zoom (corner 18%, zoom < 3.5) where the flare
-  popup is too big to fit even with autoPan's max shift.
+- Both dot and flare click handlers also trigger the same `setView`
+  for an outer-corner case at very low zoom (corner 18%, zoom < 3.5)
+  where the popup is too big to fit even with autoPan's max shift.
+- Both handlers additionally always pan-before-open on mobile
+  (<768px): the marker is brought to ~65% down the screen so the
+  popup opens cleanly above. Below `MIN_ZOOM=5` this is a single-
+  motion `flyTo` (zoom + offset together); at or above it, a
+  faster `panTo` with no zoom change.
 - Dot popup widths, flare popup widths, and the Heard panel
   collapse threshold all share the same 768px mobile cutoff.
 
