@@ -8340,8 +8340,8 @@ const constellationCanvas = (function () {
     const sorted = stars.slice().sort((a, b) => {
       return (a.created_at || "").localeCompare(b.created_at || "");
     });
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1;
     ctx.lineCap = "round";
     for (let i = 1; i < sorted.length; i++) {
       const a = sorted[i - 1];
