@@ -1242,12 +1242,20 @@
     transition: transform 0.18s ease;
     pointer-events: none;
   }
-  .star svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .star svg {
+    width: 100%; height: 100%; display: block; overflow: visible;
+    /* Subtle white glow so the star feels lit rather than pasted on
+       the dark space background. Single drop-shadow, low opacity. */
+    filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.4));
+  }
   .star-wrap:hover .star { transform: scale(1.12); }
   .star.expanded { transform: scale(1.18); }
-  /* "mine" — the visitor's own star gets a faint outline so they can
-     spot it among others. Same idea as `.dot.mine`, but no glow. */
-  .star.mine svg { filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.95)); }
+  /* "mine" — the visitor's own star keeps the base glow and adds a
+     tight outline pass on top so it still reads as "yours". */
+  .star.mine svg {
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.95))
+            drop-shadow(0 0 3px rgba(255, 255, 255, 0.4));
+  }
 
   /* Star compose modal — same structure as flare compose, white
      accents instead of amber. */
