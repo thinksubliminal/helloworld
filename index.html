@@ -6990,6 +6990,15 @@ geoMsg.addEventListener("click", (e) => {
   }
 });
 
+// Cached rounded position from the last successful drop-geo. Lets a
+// cancel → re-tap within 60s skip a second getCurrentPosition that
+// iOS Safari sometimes fails on with POSITION_UNAVAILABLE. The
+// precise GPS value still only lives in the success callback's local
+// scope — the cache holds the already-rounded ~100m value.
+let cachedDropLatLng = null;
+let cachedDropLatLngAt = 0;
+const DROP_LATLNG_TTL_MS = 60000;
+
 function requestDrop() {
   if (hasDroppedToday()) {
     flashHint("you've already left your mark today");
@@ -6999,6 +7008,17 @@ function requestDrop() {
     showGeoDenied();
     return;
   }
+
+  // Fast path: reuse the position from a recent successful acquire.
+  if (cachedDropLatLng && Date.now() - cachedDropLatLngAt < DROP_LATLNG_TTL_MS) {
+    const ll = cachedDropLatLng;
+    const targetZoom = Math.max(map.getZoom(), 6);
+    map.setView(ll, targetZoom, { animate: true });
+    openCompose(ll);
+    hideHint();
+    return;
+  }
+
   dropBtn.disabled = true;
   navigator.geolocation.getCurrentPosition(
     (pos) => {
@@ -7013,6 +7033,8 @@ function requestDrop() {
       const lat = Math.round(pos.coords.latitude  * 1000) / 1000;
       const lng = Math.round(pos.coords.longitude * 1000) / 1000;
       const ll = L.latLng(lat, lng);
+      cachedDropLatLng = ll;
+      cachedDropLatLngAt = Date.now();
       const targetZoom = Math.max(map.getZoom(), 6);
       map.setView(ll, targetZoom, { animate: true });
       openCompose(ll);
