@@ -8386,6 +8386,139 @@ const constellationCanvas = (function () {
   return { redraw };
 })();
 
+// Shooting star — a brief subtle streak across the viewport every
+// ~10s while in gallery. Ambient detail, no meaning attached. Own
+// canvas in the stars pane so it inherits the gallery-only opacity
+// and sits behind the star markers but above the constellation lines.
+// rAF only ticks during the ~0.7s animation; setTimeout schedules the
+// next spawn so the in-between is idle.
+(function () {
+  const c = document.createElement("canvas");
+  c.style.position = "absolute";
+  c.style.left = "0";
+  c.style.top = "0";
+  c.style.pointerEvents = "none";
+  c.style.willChange = "transform";
+  const pane = map.getPane("stars");
+  pane.appendChild(c);
+  const ctx = c.getContext("2d");
+
+  const SPAWN_INTERVAL_MS = 10000;
+  const STREAK_DURATION_MS = 700;
+  const STREAK_LENGTH_PX = 220;
+  let current = null;
+  let raf = 0;
+  let spawnTimer = 0;
+
+  function reset() {
+    const size = map.getSize();
+    const dpr = window.devicePixelRatio || 1;
+    c.width = Math.max(1, size.x * dpr);
+    c.height = Math.max(1, size.y * dpr);
+    c.style.width = size.x + "px";
+    c.style.height = size.y + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    move();
+  }
+  function move() {
+    const tl = map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(c, tl);
+  }
+
+  function inGallery() {
+    return document.body.classList.contains("in-gallery");
+  }
+
+  function spawn() {
+    spawnTimer = 0;
+    if (document.hidden || !inGallery()) {
+      schedule();
+      return;
+    }
+    const size = map.getSize();
+    const startX = Math.random() * size.x;
+    const startY = Math.random() * size.y * 0.4;
+    const sideways = Math.random() < 0.5 ? -1 : 1;
+    const angleFromHoriz = (30 + Math.random() * 30) * Math.PI / 180;
+    current = {
+      startX, startY,
+      dx: sideways * Math.cos(angleFromHoriz),
+      dy: Math.sin(angleFromHoriz),
+      startTime: performance.now()
+    };
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+
+  function tick(now) {
+    raf = 0;
+    if (!current) return;
+    const t = (now - current.startTime) / STREAK_DURATION_MS;
+    const size = map.getSize();
+    ctx.clearRect(0, 0, size.x, size.y);
+    if (t >= 1) {
+      current = null;
+      schedule();
+      return;
+    }
+    // Head moves forward; tail trails by a fixed pixel length. Slight
+    // forward overshoot (1.5x) keeps the streak feeling like it's
+    // passing through the frame, not slowing down at the end.
+    const travel = STREAK_LENGTH_PX * t * 1.5;
+    const headX = current.startX + current.dx * travel;
+    const headY = current.startY + current.dy * travel;
+    const tailX = headX - current.dx * STREAK_LENGTH_PX;
+    const tailY = headY - current.dy * STREAK_LENGTH_PX;
+    // Fade in (0..0.3) and out (0.7..1) so it reads as a quick blink.
+    let alpha;
+    if (t < 0.3) alpha = t / 0.3;
+    else if (t > 0.7) alpha = (1 - t) / 0.3;
+    else alpha = 1;
+    alpha *= 0.6;
+    const grad = ctx.createLinearGradient(tailX, tailY, headX, headY);
+    grad.addColorStop(0, "rgba(255, 255, 255, 0)");
+    grad.addColorStop(1, `rgba(255, 255, 255, ${alpha})`);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(tailX, tailY);
+    ctx.lineTo(headX, headY);
+    ctx.stroke();
+    raf = requestAnimationFrame(tick);
+  }
+
+  function schedule() {
+    if (spawnTimer) clearTimeout(spawnTimer);
+    spawnTimer = setTimeout(spawn, SPAWN_INTERVAL_MS);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (spawnTimer) { clearTimeout(spawnTimer); spawnTimer = 0; }
+      current = null;
+      ctx.clearRect(0, 0, map.getSize().x, map.getSize().y);
+    } else if (!spawnTimer && !raf) {
+      schedule();
+    }
+  });
+
+  map.on("viewreset resize", reset);
+  map.on("move zoom", () => {
+    // During pans/zooms, clear any active streak so a moving streak
+    // doesn't visually anchor to stale pixel coords mid-flight.
+    if (current) {
+      current = null;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      ctx.clearRect(0, 0, map.getSize().x, map.getSize().y);
+      schedule();
+    }
+    move();
+  });
+  reset();
+  schedule();
+})();
+
 function loadUserStars() {
   try {
     const raw = localStorage.getItem(STAR_KEY);
