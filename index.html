@@ -1256,6 +1256,18 @@
     filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.95))
             drop-shadow(0 0 3px rgba(255, 255, 255, 0.4));
   }
+  /* The day's first star takes on the flare amber — same "opener"
+     hue as a flare so the chronological seed of the constellation
+     reads as the lead voice. JS tags .first on the earliest-created
+     star and re-tags as new stars arrive. */
+  .star.first { color: #ff9e3d; }
+  .star.first svg {
+    filter: drop-shadow(0 0 3px rgba(255, 158, 61, 0.6));
+  }
+  .star.first.mine svg {
+    filter: drop-shadow(0 0 1px rgba(255, 158, 61, 0.95))
+            drop-shadow(0 0 3px rgba(255, 158, 61, 0.6));
+  }
 
   /* Star compose modal — same structure as flare compose, white
      accents instead of amber. */
@@ -8408,6 +8420,32 @@ function starIconHtml(star) {
   return `<div class="${cls}" aria-hidden="true">${STAR_SVG}</div>`;
 }
 
+// Tag the earliest-created star with the .first class so it picks up
+// the flare-amber color. Deferred via rAF because boot calls
+// addStarMarker many times BEFORE the layer is added to the map (so
+// marker elements don't exist yet); one frame later, they do, and
+// repeated calls coalesce into a single DOM pass.
+let _firstStarRAF = 0;
+function markFirstStar() {
+  if (_firstStarRAF) return;
+  _firstStarRAF = requestAnimationFrame(() => {
+    _firstStarRAF = 0;
+    if (!stars.length) return;
+    let first = null;
+    for (const s of stars) {
+      const t = s.created_at || "";
+      if (!first || t < (first.created_at || "")) first = s;
+    }
+    for (const [id, m] of starMarkers.entries()) {
+      const el = m.getElement && m.getElement();
+      if (!el) continue;
+      const starEl = el.querySelector(".star");
+      if (!starEl) continue;
+      starEl.classList.toggle("first", id === first.id);
+    }
+  });
+}
+
 function addStarMarker(star) {
   const icon = L.divIcon({
     className: "star-wrap",
@@ -8457,6 +8495,7 @@ function addStarMarker(star) {
   starLayer.addLayer(m);
   starMarkers.set(star.id, m);
   constellationCanvas.redraw();
+  markFirstStar();
 }
 
 function buildStarPopup(star) {
@@ -8880,6 +8919,7 @@ if (IS_DEV_MODE) {
       if (stars[i].mine) stars.splice(i, 1);
     }
     constellationCanvas.redraw();
+    markFirstStar();
     syncStarBtn();
     syncStarPrompt();
     console.log("%c[dev] resetMyStar: localStorage cleared", "color:#ffffff");
