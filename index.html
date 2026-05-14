@@ -5540,6 +5540,21 @@ function appendDotThread(msg, wrap) {
   }
 }
 
+// If a dot's popup is currently open and a new response just landed,
+// rebuild its content so the user sees the new reply without having to
+// close and re-open. Parallel to refreshOpenFlarePopup. No-op when the
+// popup isn't open.
+function refreshOpenDotPopup(messageId) {
+  const dm = dotMarkers.get(messageId);
+  if (!dm || !dm.isPopupOpen || !dm.isPopupOpen()) return;
+  const msg = messages.find(x => x.id === messageId);
+  if (!msg) return;
+  const popup = dm.getPopup();
+  if (!popup) return;
+  popup.setContent(buildPopup(msg));
+  if (popup.update) popup.update();
+}
+
 // Public dot thread, 500-char shared budget, 50-char per reply, no
 // back-to-back from the same device, dot author can't post first.
 // The DB enforces all of this atomically via insert_message_response:
