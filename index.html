@@ -1202,9 +1202,9 @@
     background: rgba(255, 255, 255, 0.14);
   }
   #earthBackBtn:active { transform: scale(0.96); }
-  /* 18px to match #museumBtn — both are the rocket icon ("travel
-     between realms"), just contextually inverted (earth→space vs
-     space→earth). Same icon, same size. */
+  /* 18px to match #museumBtn so the two buttons feel like the same
+     material. Icons differ: #museumBtn is a rocket (travel out),
+     #earthBackBtn is a back arrow (return). */
   #earthBackBtn svg { width: 18px; height: 18px; display: block; }
 
   /* Stars live in their own Leaflet pane (created in JS via
@@ -2731,11 +2731,8 @@
     </button>
     <button id="earthBackBtn" type="button" aria-label="back to earth">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 2 C 15 4, 16 9, 16 13 L 16 16 L 8 16 L 8 13 C 8 9, 9 4, 12 2 Z"/>
-        <path d="M 8 13 L 4 18 L 8 17"/>
-        <path d="M 16 13 L 20 18 L 16 17"/>
-        <circle cx="12" cy="9" r="1.5"/>
-        <path d="M 10 18 L 12 22 L 14 18"/>
+        <path d="M19 12 H5"/>
+        <path d="M12 5 L5 12 L12 19"/>
       </svg>
     </button>
   </div>
