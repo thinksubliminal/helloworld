@@ -1202,10 +1202,11 @@
     background: rgba(255, 255, 255, 0.14);
   }
   #earthBackBtn:active { transform: scale(0.96); }
-  /* 18px to match #museumBtn so the two buttons feel like the same
-     material. Icons differ: #museumBtn is a rocket (travel out),
-     #earthBackBtn is a back arrow (return). */
-  #earthBackBtn svg { width: 18px; height: 18px; display: block; }
+  /* 22px to match #starBtn — both icons read thinner than #museumBtn's
+     rocket at the same numeric size (the star polygon has empty
+     corners, the arrow is a stroke), so they need the optical bump to
+     feel balanced as a toolbar pair. */
+  #earthBackBtn svg { width: 22px; height: 22px; display: block; }
 
   /* Stars live in their own Leaflet pane (created in JS via
      map.createPane('stars')) so they're decoupled from the regular
@@ -2731,8 +2732,8 @@
     </button>
     <button id="earthBackBtn" type="button" aria-label="back to earth">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M19 12 H5"/>
-        <path d="M12 5 L5 12 L12 19"/>
+        <path d="M5 12 H19"/>
+        <path d="M12 5 L19 12 L12 19"/>
       </svg>
     </button>
   </div>
