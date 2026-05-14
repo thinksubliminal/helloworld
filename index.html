@@ -9363,7 +9363,15 @@ function refreshOpenStarPopup(starId) {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       stopPolling();
-    } else if (!isIdle()) {
+      return;
+    }
+    // iOS Safari can foreground the tab without firing a map event,
+    // leaving the canvas overlays (dots/flares/stars/chest) drawn at
+    // their pre-background pixel positions while the map underneath has
+    // re-projected. Forcing a viewport recompute fires 'resize', which
+    // the canvases listen to and self-reset on.
+    map.invalidateSize();
+    if (!isIdle()) {
       pollOnce();
       startPolling();
     }
