@@ -8120,6 +8120,12 @@ function exitFlarePlacementMode() {
 // "FROM" location stamped on the flare. Cleared after each flare is sent
 // (or placement mode is cancelled).
 let planterLatLng = null;
+// Timestamp of the last successful geolocation acquire. Lets us reuse
+// the cached position on rapid re-entries (cancel → re-tap) so we don't
+// fire a second getCurrentPosition that iOS Safari sometimes fails on
+// with POSITION_UNAVAILABLE. Matches the geolocation maximumAge window.
+let planterLatLngAt = 0;
+const PLANTER_LATLNG_TTL_MS = 60000;
 
 function requestFlare() {
   // Tapping the button while in placement mode cancels.
@@ -8134,6 +8140,14 @@ function requestFlare() {
   }
   if (!navigator.geolocation) { showGeoDenied(); return; }
 
+  // Fast path: re-entering placement mode within the cache window
+  // reuses the position from the previous attempt. Avoids iOS Safari's
+  // flakiness with back-to-back getCurrentPosition calls.
+  if (planterLatLng && Date.now() - planterLatLngAt < PLANTER_LATLNG_TTL_MS) {
+    enterFlarePlacementMode();
+    return;
+  }
+
   flareBtn.disabled = true;
   navigator.geolocation.getCurrentPosition(
     (pos) => {
@@ -8145,6 +8159,7 @@ function requestFlare() {
       const lat = Math.round(pos.coords.latitude  * 1000) / 1000;
       const lng = Math.round(pos.coords.longitude * 1000) / 1000;
       planterLatLng = L.latLng(lat, lng);
+      planterLatLngAt = Date.now();
       flareBtn.disabled = false;
       enterFlarePlacementMode();
     },
