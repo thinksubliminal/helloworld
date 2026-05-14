@@ -8436,14 +8436,16 @@ const constellationCanvas = (function () {
       return;
     }
     const size = map.getSize();
+    // Random direction (0..360°) and random start position anywhere in
+    // the viewport — streaks can fall from above, slide sideways, rise,
+    // or cut across at any angle. Each spawn picks fresh.
     const startX = Math.random() * size.x;
-    const startY = Math.random() * size.y * 0.4;
-    const sideways = Math.random() < 0.5 ? -1 : 1;
-    const angleFromHoriz = (30 + Math.random() * 30) * Math.PI / 180;
+    const startY = Math.random() * size.y;
+    const angle = Math.random() * Math.PI * 2;
     current = {
       startX, startY,
-      dx: sideways * Math.cos(angleFromHoriz),
-      dy: Math.sin(angleFromHoriz),
+      dx: Math.cos(angle),
+      dy: Math.sin(angle),
       startTime: performance.now()
     };
     if (!raf) raf = requestAnimationFrame(tick);
