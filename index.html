@@ -8487,9 +8487,17 @@ const constellationCanvas = (function () {
     raf = requestAnimationFrame(tick);
   }
 
+  // First spawn after load (or after returning to a visible tab) uses
+  // a random 1–5s delay so the streak shows up soon rather than making
+  // visitors wait the full 10s. After that, the regular interval.
+  let firstSpawn = true;
   function schedule() {
     if (spawnTimer) clearTimeout(spawnTimer);
-    spawnTimer = setTimeout(spawn, SPAWN_INTERVAL_MS);
+    const delay = firstSpawn
+      ? 1000 + Math.random() * 4000
+      : SPAWN_INTERVAL_MS;
+    firstSpawn = false;
+    spawnTimer = setTimeout(spawn, delay);
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -8499,6 +8507,8 @@ const constellationCanvas = (function () {
       current = null;
       ctx.clearRect(0, 0, map.getSize().x, map.getSize().y);
     } else if (!spawnTimer && !raf) {
+      // Treat tab-return as a fresh entry — quick first streak again.
+      firstSpawn = true;
       schedule();
     }
   });
