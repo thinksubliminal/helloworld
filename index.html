@@ -8298,6 +8298,74 @@ map.getPane("stars").style.zIndex = 651;
 // gallery-only opacity transition.
 map.getPane("stars").classList.add("leaflet-stars-pane");
 
+// Constellation lines between stars — chronological. Each new star
+// draws a thin line back to the one placed just before it, so the
+// day's stars accumulate into a connected shape. Lives on a canvas
+// inserted at the bottom of the stars pane so it inherits the
+// gallery-only opacity transition and sits behind the star markers.
+// Lines stop a few px shy of each endpoint so they don't crash into
+// the irregular star outline.
+const constellationCanvas = (function () {
+  const c = document.createElement("canvas");
+  c.style.position = "absolute";
+  c.style.left = "0";
+  c.style.top = "0";
+  c.style.pointerEvents = "none";
+  c.style.willChange = "transform";
+  const pane = map.getPane("stars");
+  pane.insertBefore(c, pane.firstChild);
+  const ctx = c.getContext("2d");
+  const STAR_GAP_PX = 14;
+
+  function reset() {
+    const size = map.getSize();
+    const dpr = window.devicePixelRatio || 1;
+    c.width = Math.max(1, size.x * dpr);
+    c.height = Math.max(1, size.y * dpr);
+    c.style.width = size.x + "px";
+    c.style.height = size.y + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    move();
+  }
+  function move() {
+    const tl = map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(c, tl);
+    redraw();
+  }
+  function redraw() {
+    if (!ctx) return;
+    const size = map.getSize();
+    ctx.clearRect(0, 0, size.x, size.y);
+    if (!Array.isArray(stars) || stars.length < 2) return;
+    const sorted = stars.slice().sort((a, b) => {
+      return (a.created_at || "").localeCompare(b.created_at || "");
+    });
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+    ctx.lineWidth = 1;
+    ctx.lineCap = "round";
+    for (let i = 1; i < sorted.length; i++) {
+      const a = sorted[i - 1];
+      const b = sorted[i];
+      const pa = map.latLngToContainerPoint([a.lat, a.lng]);
+      const pb = map.latLngToContainerPoint([b.lat, b.lng]);
+      const dx = pb.x - pa.x;
+      const dy = pb.y - pa.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= STAR_GAP_PX * 2) continue;
+      const ux = dx / dist, uy = dy / dist;
+      ctx.beginPath();
+      ctx.moveTo(pa.x + ux * STAR_GAP_PX, pa.y + uy * STAR_GAP_PX);
+      ctx.lineTo(pb.x - ux * STAR_GAP_PX, pb.y - uy * STAR_GAP_PX);
+      ctx.stroke();
+    }
+  }
+
+  map.on("viewreset resize", reset);
+  map.on("move zoom", move);
+  reset();
+  return { redraw };
+})();
+
 function loadUserStars() {
   try {
     const raw = localStorage.getItem(STAR_KEY);
@@ -8380,6 +8448,7 @@ function addStarMarker(star) {
 
   starLayer.addLayer(m);
   starMarkers.set(star.id, m);
+  constellationCanvas.redraw();
 }
 
 function buildStarPopup(star) {
@@ -8802,6 +8871,7 @@ if (IS_DEV_MODE) {
     for (let i = stars.length - 1; i >= 0; i--) {
       if (stars[i].mine) stars.splice(i, 1);
     }
+    constellationCanvas.redraw();
     syncStarBtn();
     syncStarPrompt();
     console.log("%c[dev] resetMyStar: localStorage cleared", "color:#ffffff");
