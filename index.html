@@ -6453,6 +6453,20 @@ function updateLayers() {
   if (countriesLayer && !map.hasLayer(countriesLayer)) countriesLayer.addTo(map);
 }
 
+// Lower zooms can't show fine country detail (sub-pixel coastline
+// noise), so simplify more aggressively below zoom 4 for cheaper
+// canvas redraws on pan. At zoom >=4 fall back to the original 1.2
+// to preserve visible quality once outlines are large enough to read.
+const COUNTRY_SMOOTH_LOW       = 3.0;
+const COUNTRY_SMOOTH_HIGH      = 1.2;
+const COUNTRY_SMOOTH_ZOOM_BREAK = 4;
+function getCountrySmoothFactor() {
+  return map.getZoom() < COUNTRY_SMOOTH_ZOOM_BREAK
+    ? COUNTRY_SMOOTH_LOW
+    : COUNTRY_SMOOTH_HIGH;
+}
+let _countrySmoothHookBound = false;
+
 function buildCountriesLayer() {
   if (!countriesGeoJSON) return;
   if (countriesLayer) countriesLayer.remove();
@@ -6460,7 +6474,7 @@ function buildCountriesLayer() {
     style: () => SILHOUETTE_STYLE,
     interactive: false,
     pane: "countryPane",
-    smoothFactor: 1.2,
+    smoothFactor: getCountrySmoothFactor(),
     // Canvas renderer redraws faster than SVG for large polygons.
     // Padding pre-renders extra viewport on each side so a quick pan
     // doesn't outrun the rendered area. 0.5 (renderer buffer 4×
@@ -6471,6 +6485,23 @@ function buildCountriesLayer() {
     renderer: L.canvas({ padding: 0.15, pane: "countryPane" })
   });
   countriesLayer.addTo(map);
+  // Re-simplify on zoom threshold crossings. Cheap (~177 polygons)
+  // and only fires when zoomend actually changes which side of
+  // COUNTRY_SMOOTH_ZOOM_BREAK we're on. Bound exactly once.
+  if (!_countrySmoothHookBound) {
+    let lastFactor = getCountrySmoothFactor();
+    map.on("zoomend", () => {
+      if (!countriesLayer) return;
+      const next = getCountrySmoothFactor();
+      if (next === lastFactor) return;
+      lastFactor = next;
+      countriesLayer.eachLayer(l => {
+        l.options.smoothFactor = next;
+        if (l._reset) l._reset();
+      });
+    });
+    _countrySmoothHookBound = true;
+  }
 }
 
 // ───────────── MOOD PICKER UI ─────────────
