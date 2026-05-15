@@ -4402,6 +4402,20 @@ updateGalleryMode();
 // breathing room above and below, instead of landing pressed-in.
 const MUSEUM_LANDING_ZOOM = INITIAL_ZOOM - 0.5;
 elMuseumBtn.addEventListener("click", () => {
+  // Close any open earth-side popups before leaving — they'd be
+  // stranded against an empty space backdrop otherwise.
+  for (const dm of dotMarkers.values()) {
+    if (dm.isPopupOpen && dm.isPopupOpen()) dm.closePopup();
+  }
+  for (const fm of flareMarkers.values()) {
+    if (fm.isPopupOpen && fm.isPopupOpen()) fm.closePopup();
+  }
+  if (bottleMarker && bottleMarker.isPopupOpen && bottleMarker.isPopupOpen()) {
+    bottleMarker.closePopup();
+  }
+  if (treasureChestMarker && treasureChestMarker.isPopupOpen && treasureChestMarker.isPopupOpen()) {
+    treasureChestMarker.closePopup();
+  }
   // Start fading the world (continents, dots, flares, heard
   // panel) immediately on click so it transitions smoothly during the
   // flight rather than poofing when the lng threshold is crossed.
@@ -4415,6 +4429,10 @@ elMuseumBtn.addEventListener("click", () => {
 });
 elBackToMapBtn.addEventListener("click", () => {
   if (elGalleryLightbox.classList.contains("open")) closeGalleryLightbox();
+  // Close any open star popups before leaving space.
+  for (const sm of starMarkers.values()) {
+    if (sm.isPopupOpen && sm.isPopupOpen()) sm.closePopup();
+  }
   // Cancel any in-progress star placement so the aim hint and cursor
   // don't follow the visitor back to earth.
   if (typeof exitStarPlacementMode === "function") exitStarPlacementMode();
@@ -8664,6 +8682,74 @@ function addStarMarker(star) {
       pane: "tooltipPane"
     });
   }
+
+  // Pan-before-open parity with the dot and flare click handlers.
+  // Thresholds intentionally match — if you tune one, tune all three.
+  // See the flare m.off("click") block for the canonical comments.
+  const STAR_TAP_MIN_ZOOM = 5;
+  m.off("click").on("click", () => {
+    if (m.isPopupOpen()) { m.closePopup(); return; }
+
+    const isMobile = window.innerWidth < 768;
+    const size = map.getSize();
+
+    if (isMobile) {
+      if (map.getZoom() < STAR_TAP_MIN_ZOOM) {
+        const starWorld = map.project([star.lat, star.lng], STAR_TAP_MIN_ZOOM);
+        const targetCenter = map.unproject(
+          L.point(starWorld.x, starWorld.y - size.y * 0.15),
+          STAR_TAP_MIN_ZOOM
+        );
+        map.flyTo(targetCenter, STAR_TAP_MIN_ZOOM, {
+          duration: 0.5,
+          easeLinearity: 0.25
+        });
+      } else {
+        const starPoint = map.latLngToContainerPoint([star.lat, star.lng]);
+        const targetCenter = map.containerPointToLatLng(
+          L.point(starPoint.x, starPoint.y - size.y * 0.15)
+        );
+        map.panTo(targetCenter, {
+          animate: true,
+          duration: 0.35,
+          easeLinearity: 0.25
+        });
+      }
+      map.once("moveend", () => m.openPopup());
+      return;
+    }
+
+    const starPoint = map.latLngToContainerPoint([star.lat, star.lng]);
+    const TOP_EDGE_PCT = 0.25;
+    const OUTER_CORNER_PCT = 0.18;
+    const SEVERE_LOW_ZOOM = 3.5;
+    const inTopEdge = starPoint.y < size.y * TOP_EDGE_PCT;
+    const inOuterCorner =
+      starPoint.x < size.x * OUTER_CORNER_PCT ||
+      starPoint.x > size.x * (1 - OUTER_CORNER_PCT) ||
+      starPoint.y < size.y * OUTER_CORNER_PCT ||
+      starPoint.y > size.y * (1 - OUTER_CORNER_PCT);
+    const needsZoomIn =
+      (inTopEdge && map.getZoom() < STAR_TAP_MIN_ZOOM) ||
+      (inOuterCorner && map.getZoom() < SEVERE_LOW_ZOOM);
+
+    if (!needsZoomIn) {
+      m.openPopup();
+      return;
+    }
+
+    const targetZoom = Math.max(map.getZoom() + 0.5, 4);
+    const starWorld = map.project([star.lat, star.lng], targetZoom);
+    const targetCenter = map.unproject(
+      L.point(starWorld.x, starWorld.y - size.y * 0.10),
+      targetZoom
+    );
+    map.setView(targetCenter, targetZoom, {
+      animate: true,
+      duration: 0.45
+    });
+    map.once("moveend", () => m.openPopup());
+  });
 
   m.on("popupopen", () => {
     const el = m.getElement();
