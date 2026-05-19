@@ -422,53 +422,47 @@ applies all three guards:
   uselessly behind a hidden
   body.
 - Hidden entirely when there are no messages today.
-- **Muted dots are excluded from the candidate pool** — see Personal mute
-  section below.
 
 ## Per-message actions menu (kebab on dot popups)
 - Top-right of every dot popup is a kebab (three vertical dots) button
-  that opens a small dropdown with **Blur** and **Report**. Replaced
-  the older single-purpose eye icon so the action set can grow without
-  crowding the popup chrome.
+  that opens a small dropdown with **Share** (copies a deep-link to the
+  clipboard) and **Report** (inserts into the public reports table).
+  Flare and star popups carry the same kebab but with Share only —
+  Report is on the roadmap once the reports table is generalized
+  beyond `message_id`.
 - Click-outside-to-close: the menu adds a `document` click listener on
   open and tears it down on close. The listener is added via
   `setTimeout(0)` so the same click that opens the menu doesn't
   immediately close it. Menu item handlers all call `closeMenu()`.
-
-### Blur (personal mute)
-- Tap **Blur** → message text blurs, menu item flips to **Unblur**.
-  Tap again → unblurs. Pure visual toggle, dot stays on the map either
-  way.
-- **Local only.** Stored in `localStorage` under key `hw-muted-ids` as
-  a JSON array of message UUIDs. No Supabase column, no server state,
-  no record exists that anyone blurred anything.
-- Other visitors are completely unaffected — they see the dot normally
-  in popups and in their own Heard panel rotation.
-- Muted IDs are also filtered out of the Heard Around the World pool so
-  the side panel respects the same gesture (`renderHeardPanel()` check).
-- Daily UTC midnight reset deletes the underlying messages, so any stale
-  IDs in the localStorage list become harmless dead weight (no cleanup
-  needed; the list naturally caps at "today's blurred dots").
-- Constants: `MUTED_KEY`, `mutedIds` Set, `loadMutedIds()`,
-  `saveMutedIds()`, `toggleMuted()` all live just before `buildPopup()`.
+- Previously this menu also carried **Blur**, a personal-mute toggle
+  whose only practical effect was filtering the Heard Around the World
+  rotation. With Heard panel currently hidden (`#hwPanel { display:
+  none !important; }`), Blur was removed 2026-05-19 — no DB or
+  server-side traces, just dead local code. `localStorage.hw-muted-ids`
+  values on old visitors are now harmless orphans.
 
 ### Report
 - Tap **Report** → fire-and-forget INSERT into the public `reports`
-  table (`message_id` + `created_at`), then a `flashHint` toast
-  ("reported. thanks." on success, "report failed. try again later."
-  on any error). One-tap, no confirmation modal — accidental reports
-  are cheap to ignore in the queue.
+  table (`kind` + `subject_id` + `created_at`), then inline status text
+  in the kebab menu ("reported. thanks." on success, "report failed.
+  try again." on any error). One-tap, no confirmation modal —
+  accidental reports are cheap to ignore in the queue.
+- `kind` is `'message'`, `'flare'`, or `'star'` and identifies which
+  table `subject_id` references. Dots (messages), flares, and stars
+  all use the same `reports` row shape. (The single-table approach
+  beat the per-kind tables alternative: one triage query, one cron
+  TRUNCATE line, one RLS policy.)
 - RLS: anyone can INSERT. **No SELECT policy** → reports are admin-only
   via the Supabase dashboard; the public can never read who flagged
   what. No reason field in v1; if triage signal becomes needed, add
   a `reason text` column and an enum-style dropdown in the menu.
 - `reports` is included in the midnight UTC TRUNCATE alongside
   `messages` / `flares` / etc. — reports older than 24h are useless
-  context anyway (the underlying message is gone).
-- Triage workflow: scan `SELECT message_id, count(*) FROM reports
-  GROUP BY message_id ORDER BY count(*) DESC` during launch / spike
-  windows; `DELETE FROM messages WHERE id IN (...)` for anything
-  that needs to go.
+  context anyway (the underlying subject is gone).
+- Triage workflow: scan `SELECT kind, subject_id, count(*) FROM reports
+  GROUP BY kind, subject_id ORDER BY count(*) DESC` during launch /
+  spike windows; `DELETE FROM messages WHERE id IN (...)` (or
+  `flares` / `stars` per `kind`) for anything that needs to go.
 - This is the moderation primitive on top of the three write-time
   blocks (hate-symbol codepoint, hate-phrase regex, single-word slur
   redactor). Those catch the obvious cases at insert; reports catch
@@ -477,16 +471,22 @@ applies all three guards:
 
 ### One-time migration SQL (run in Supabase SQL editor)
 ```sql
--- Reports table for the per-message Report menu item.
+-- Reports table (current schema).
 CREATE TABLE IF NOT EXISTS reports (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  message_id uuid NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('message','flare','star')),
+  subject_id uuid NOT NULL,
   created_at timestamptz DEFAULT now()
 );
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anyone can insert reports" ON reports
   FOR INSERT WITH CHECK (true);
 -- No SELECT policy on purpose: reports are admin-only signals.
+
+-- If your `reports` predates the schema above (only had `message_id`),
+-- run `reports_generalize.sql` in the repo root instead of the CREATE
+-- above. It adds `kind`, renames `message_id` to `subject_id`, and is
+-- idempotent so re-runs are safe.
 
 -- Update the midnight cron to TRUNCATE reports too. Idempotent —
 -- cron.schedule with an existing jobname replaces the schedule in

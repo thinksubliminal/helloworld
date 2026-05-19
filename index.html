@@ -320,12 +320,10 @@
      doesn't error if anything else queries them. */
   .msg-text.clampable { cursor: pointer; }
   /* Per-message actions menu (kebab icon top-right of dot popup). Tap to
-     open a small dropdown with two items: Blur (the personal mute toggle —
-     localStorage only, no server state, only affects this device) and
-     Report (inserts into the public reports table for manual triage,
-     wiped at midnight UTC alongside everything else). Replaces the older
-     single-purpose eye icon so we can grow the action set without
-     cluttering the popup chrome. */
+     open a small dropdown with Share (copies a deep-link to clipboard)
+     and Report (inserts into the public reports table for manual triage,
+     wiped at midnight UTC alongside everything else). Flare and star
+     popups reuse the same .msg-actions-* selectors. */
   .msg-popup-wrap { position: relative; padding-right: 20px; }
   .msg-actions {
     position: absolute;
@@ -387,12 +385,6 @@
     white-space: nowrap;
   }
   .msg-actions-status.err { color: #ff8585; }
-  .msg-text.muted {
-    filter: blur(5px);
-    user-select: none;
-    pointer-events: none;
-    transition: filter 0.2s;
-  }
   .msg-meta {
     margin-top: 12px;
     display: flex;
@@ -1982,10 +1974,13 @@
   }
 
   /* Envelope marker — a quiet "letter" the dev leaves on the map to
-     announce a new feature. Mirrors the chest/bottle wrapper pattern.
-     Unread state has a soft pale glow so it's findable but not loud;
-     once read (popup opened), the glow drops and opacity steps down
-     to "settled" — the envelope stays on the map either way. */
+     announce a new feature. Permanent fixture (does not wipe at midnight
+     UTC); only the read-state changes per-visitor via localStorage.
+     Same size + amber glow as the treasure chest so the two read as a
+     family of "objects sitting on the map". Adds a pulse ring on the
+     unread state — same @keyframes pulse the mood dots use — so it
+     reads as a "there's something here" beacon. Read state drops the
+     pulse and glow but keeps the envelope visible at reduced opacity. */
   .envelope-wrap {
     background: transparent !important;
     border: none !important;
@@ -1998,22 +1993,48 @@
     height: 20px;
     cursor: pointer;
     position: relative;
-    opacity: 0.95;
-    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.45))
-            drop-shadow(0 0 8px rgba(255, 255, 255, 0.18));
-    transition: opacity 0.5s ease, filter 0.5s ease;
   }
-  .envelope.read {
-    opacity: 0.45;
-    filter: none;
-  }
-  .envelope img {
+  /* Inner element carries the SVG fill via CSS mask. Split from .envelope
+     so the parent can host the pulse ::after without the mask clipping it
+     to the envelope's silhouette (mask-image cascades to descendants and
+     pseudo-elements). */
+  .envelope-icon {
     width: 100%;
     height: 100%;
     display: block;
-    /* SVG is solid black on a transparent background; invert so it reads
-       as soft white on the dark map. */
-    filter: invert(1);
+    background-color: #ff9e3d;
+    -webkit-mask-image: url('assets/life-saver.svg');
+            mask-image: url('assets/life-saver.svg');
+    -webkit-mask-size: contain;
+            mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+            mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+            mask-position: center;
+    filter: drop-shadow(0 0 2px rgba(255, 158, 61, 0.5))
+            drop-shadow(0 0 7px rgba(255, 158, 61, 0.2));
+    transition: opacity 0.5s ease, filter 0.5s ease, background-color 0.4s ease;
+  }
+  .envelope::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    bottom: -4px;
+    left: -4px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 158, 61, 0.75);
+    animation: pulse 3s ease-out infinite;
+    pointer-events: none;
+  }
+  .envelope.read .envelope-icon {
+    background-color: #8a8e96;
+    opacity: 0.6;
+    filter: none;
+  }
+  .envelope.read::after {
+    animation: none;
+    border-color: transparent;
   }
 
   /* Announcement popup — same dark chrome as dot/flare/star popups; eyebrow
@@ -2021,26 +2042,26 @@
      from the dev rather than a visitor. */
   .announcement-popup {
     width: 240px;
-    padding-bottom: 4px;
+    padding: 4px 4px 10px;
   }
   .announcement-eyebrow {
     font-size: 9px;
     color: rgba(255, 255, 255, 0.55);
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    margin-bottom: 10px;
+    margin-bottom: 14px;
   }
   .announcement-title {
     color: rgba(255, 255, 255, 0.92);
     font-size: 14px;
     line-height: 1.45;
-    margin-bottom: 8px;
+    margin-bottom: 14px;
     font-weight: 500;
   }
   .announcement-body {
     color: rgba(255, 255, 255, 0.78);
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 1.55;
     white-space: pre-wrap;
   }
 
@@ -2081,6 +2102,13 @@
   }
   .leaflet-popup.flare-popup .leaflet-popup-content-wrapper {
     overflow: visible;
+  }
+  /* Same width override the flare popup uses, so the 240px-wide
+     announcement card doesn't overflow the globally-clamped 220px
+     .leaflet-popup-content and end up looking lopsided. */
+  .leaflet-popup.announcement .leaflet-popup-content {
+    width: 240px !important;
+    margin: 14px 18px 16px;
   }
   .flare-popup-content {
     width: 240px;
@@ -5357,33 +5385,6 @@ function addDotMarker(msg) {
   dotCanvas.setDot(msg);
 }
 
-// ───────────── PERSONAL MUTE ─────────────
-// Per-device list of message IDs the user has chosen to blur. Stored in
-// localStorage. A muted message: dot stays on the map, popup still opens,
-// but the text is blurred until the user taps the eye icon to unmute.
-// Muted messages are also dropped from the Heard Around the World pool.
-// Pure local — no Supabase column, no server state, nobody else affected.
-// Daily UTC midnight reset deletes the underlying messages, so any stale
-// IDs in the list become harmless dead weight (no cleanup needed).
-const MUTED_KEY = "hw-muted-ids";
-const mutedIds = new Set();
-(function loadMutedIds() {
-  try {
-    const raw = localStorage.getItem(MUTED_KEY);
-    if (!raw) return;
-    const arr = JSON.parse(raw);
-    if (Array.isArray(arr)) for (const id of arr) mutedIds.add(id);
-  } catch (e) { /* ignore corrupt storage */ }
-})();
-function saveMutedIds() {
-  try { localStorage.setItem(MUTED_KEY, JSON.stringify([...mutedIds])); }
-  catch (e) { /* quota or disabled — no-op */ }
-}
-function toggleMuted(id) {
-  if (mutedIds.has(id)) mutedIds.delete(id);
-  else mutedIds.add(id);
-  saveMutedIds();
-}
 const KEBAB_ICON =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
     '<circle cx="12" cy="5" r="2"/>' +
@@ -5393,11 +5394,14 @@ const KEBAB_ICON =
 
 // Insert into the public `reports` table. RLS allows anyone to insert,
 // no SELECT policy → no public reads (signals are admin-only). The row
-// is wiped at midnight UTC alongside flares/messages. Returns
-// true on success, false on any failure (caller surfaces a flashHint).
-async function reportMessage(msgId) {
+// is wiped at midnight UTC alongside its subject. `kind` is one of
+// 'message' | 'flare' | 'star' and identifies which table `subject_id`
+// references — the triage workflow groups by (kind, subject_id) and
+// deletes from the matching table. Returns true on success, false on
+// any failure (caller surfaces inline kebab status).
+async function reportSubject(kind, subjectId) {
   try {
-    const { error } = await sb.from("reports").insert({ message_id: msgId });
+    const { error } = await sb.from("reports").insert({ kind, subject_id: subjectId });
     if (error) {
       console.warn("[report] failed:", error.message);
       return false;
@@ -5426,16 +5430,18 @@ async function sharePopupLink(kind, id) {
   }
 }
 
-// Wire a single-item kebab → Share menu on a popup wrap. Used by flare and
-// star popups (dot popup wires its own kebab inline since it carries Blur
-// and Report too). Matches the dot pattern: open on tap, close on outside-
-// click or escape; the document listener is added via setTimeout(0) so the
-// opening tap doesn't immediately close it.
-function wireShareMenu(wrap, kind, id) {
+// Wire the kebab → Share / Report menu on a flare or star popup wrap. Mirrors
+// the dot popup's inline kebab wiring (which stays inline because it predates
+// this helper; both produce the same UX). Looks for `.msg-action-share` and
+// `.msg-action-report` and wires whichever exists, so callers can render
+// either or both items. Document-level outside-click listener is added via
+// setTimeout(0) so the opening tap doesn't immediately close it.
+function wireActionsMenu(wrap, kind, id) {
   const actionsBtn = wrap.querySelector(".msg-actions");
   const menu = wrap.querySelector(".msg-actions-menu");
   const shareBtn = wrap.querySelector(".msg-action-share");
-  if (!actionsBtn || !menu || !shareBtn) return;
+  const reportBtn = wrap.querySelector(".msg-action-report");
+  if (!actionsBtn || !menu) return;
   const onDocClick = (ev) => {
     if (!menu.contains(ev.target) && !actionsBtn.contains(ev.target)) closeMenu();
   };
@@ -5455,16 +5461,31 @@ function wireShareMenu(wrap, kind, id) {
       document.removeEventListener("click", onDocClick);
     }
   });
-  shareBtn.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const ok = await sharePopupLink(kind, id);
-    menu.innerHTML =
-      `<div class="msg-actions-status${ok ? "" : " err"}">` +
-        (ok ? "link copied" : "couldn't copy. try again.") +
-      `</div>`;
-    setTimeout(closeMenu, 1300);
-  });
+  if (shareBtn) {
+    shareBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const ok = await sharePopupLink(kind, id);
+      menu.innerHTML =
+        `<div class="msg-actions-status${ok ? "" : " err"}">` +
+          (ok ? "link copied" : "couldn't copy. try again.") +
+        `</div>`;
+      setTimeout(closeMenu, 1300);
+    });
+  }
+  if (reportBtn) {
+    reportBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      reportBtn.disabled = true;
+      const ok = await reportSubject(kind, id);
+      menu.innerHTML =
+        `<div class="msg-actions-status${ok ? "" : " err"}">` +
+          (ok ? "reported. thanks." : "report failed. try again.") +
+        `</div>`;
+      setTimeout(closeMenu, 1300);
+    });
+  }
 }
 
 function buildPopup(msg) {
@@ -5483,20 +5504,15 @@ function buildPopup(msg) {
   }
 
   // Per-message actions: kebab in top-right opens a dropdown with two
-  // items — Blur (toggles the personal-mute localStorage state, only
-  // affects this device) and Report (inserts into the public reports
-  // table, wiped at midnight UTC). The kebab replaces the older single-
-  // purpose eye icon so the action set can grow without crowding the
-  // popup chrome.
-  const muted = mutedIds.has(msg.id);
+  // items — Share (copies a deep-link to clipboard) and Report (inserts
+  // into the public reports table, wiped at midnight UTC).
   wrap.innerHTML =
     `<button class="msg-actions" type="button" aria-label="message actions" aria-haspopup="true" aria-expanded="false">${KEBAB_ICON}</button>` +
     `<div class="msg-actions-menu" role="menu">` +
       `<button type="button" class="msg-action-share" role="menuitem">Share</button>` +
-      `<button type="button" class="msg-action-blur" role="menuitem">${muted ? "Unblur" : "Blur"}</button>` +
       `<button type="button" class="msg-action-report" role="menuitem">Report</button>` +
     `</div>` +
-    `<div class="msg-text${muted ? " muted" : ""}">${escapeHtml(displayText)}</div>` +
+    `<div class="msg-text">${escapeHtml(displayText)}</div>` +
     `<div class="msg-meta">` +
       `<span class="msg-mood" style="--c:${mood?.color || "#999"}">${escapeHtml(mood?.name || msg.mood)}</span>` +
       `<span class="msg-divider">·</span>` +
@@ -5510,10 +5526,8 @@ function buildPopup(msg) {
   // click event so opening the menu doesn't immediately re-close it.
   const actionsBtn = wrap.querySelector(".msg-actions");
   const menu = wrap.querySelector(".msg-actions-menu");
-  const blurBtn = wrap.querySelector(".msg-action-blur");
   const shareBtn = wrap.querySelector(".msg-action-share");
   const reportBtn = wrap.querySelector(".msg-action-report");
-  const textEl = wrap.querySelector(".msg-text");
   const onDocClick = (ev) => {
     if (!menu.contains(ev.target) && !actionsBtn.contains(ev.target)) closeMenu();
   };
@@ -5533,17 +5547,6 @@ function buildPopup(msg) {
       document.removeEventListener("click", onDocClick);
     }
   });
-  blurBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    toggleMuted(msg.id);
-    const nowMuted = mutedIds.has(msg.id);
-    textEl.classList.toggle("muted", nowMuted);
-    blurBtn.textContent = nowMuted ? "Unblur" : "Blur";
-    closeMenu();
-    if (typeof scheduleHeardPanelRender === "function") scheduleHeardPanelRender();
-    else if (typeof renderHeardPanel === "function") renderHeardPanel();
-  });
   shareBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -5559,11 +5562,10 @@ function buildPopup(msg) {
   reportBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     e.preventDefault();
-    // Lock both items while the request is in flight so the user
-    // cannot stack reports or toggle blur on a half-submitted state.
+    // Lock the report button while the request is in flight so the user
+    // cannot stack reports on a half-submitted state.
     reportBtn.disabled = true;
-    blurBtn.disabled = true;
-    const ok = await reportMessage(msg.id);
+    const ok = await reportSubject("message", msg.id);
     // Replace the menu items with an inline confirmation so the
     // feedback shows up right where the user just tapped, then
     // close after a beat. Re-opening the popup or the menu later
@@ -6349,9 +6351,9 @@ function scheduleTreasureChestHourTick() {
 // stored "last read" id no longer matches. Set LATEST_ANNOUNCEMENT = null
 // to hide the envelope entirely.
 const LATEST_ANNOUNCEMENT = {
-  id: "2026-05-19-share",
-  title: "share what you find",
-  body: "tap the ⋮ on any dot, flare, or star and you'll find a Share option. it copies a link to your clipboard — paste it anywhere to send someone the exact post you're seeing. since dropadot resets at midnight UTC, links only work for the rest of the day."
+  id: "2026-05-19-share-v3",
+  title: "share a find",
+  body: "See something worth sharing? Tap the ⋮ menu on any dot, flare, or star and hit Share to copy a link and paste it wherever you like. Links last until midnight UTC, when the map resets."
 };
 const ENVELOPE_LOCATION = { lat: 30, lng: -40 };
 const ENVELOPE_READ_KEY = "hw-mail-last-read";
@@ -6379,9 +6381,9 @@ function placeEnvelope() {
   const read = isAnnouncementRead();
   const icon = L.divIcon({
     className: "envelope-wrap",
-    html: `<div class="envelope${read ? " read" : ""}"><img src="assets/envelope.svg" alt="" /></div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11]
+    html: `<div class="envelope${read ? " read" : ""}" role="button" aria-label="a note from the dev"><span class="envelope-icon"></span></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10]
   });
   envelopeMarker = L.marker([ENVELOPE_LOCATION.lat, ENVELOPE_LOCATION.lng], {
     icon,
@@ -6390,6 +6392,7 @@ function placeEnvelope() {
   });
   envelopeMarker.bindPopup(() => buildAnnouncementPopup(), {
     closeButton: false,
+    className: "announcement",
     minWidth: 240,
     maxWidth: 280,
     autoPan: true,
@@ -6472,7 +6475,6 @@ function renderHeardPanel() {
   const byContinent = new Map();
   for (const msg of messages) {
     if (!msg.text) continue;
-    if (mutedIds.has(msg.id)) continue; // personal mute — drop from rotation
     const c = msg.continent || continentFromLatLng(msg.lat, msg.lng);
     if (!c) continue; // ocean — skip
     if (!byContinent.has(c)) byContinent.set(c, []);
@@ -8011,6 +8013,7 @@ function buildFlarePopup(flare) {
     `<button class="msg-actions" type="button" aria-label="flare actions" aria-haspopup="true" aria-expanded="false">${KEBAB_ICON}</button>` +
     `<div class="msg-actions-menu" role="menu">` +
       `<button type="button" class="msg-action-share" role="menuitem">Share</button>` +
+      `<button type="button" class="msg-action-report" role="menuitem">Report</button>` +
     `</div>` +
     `<div class="flare-popup-eyebrow">flare · ${escapeHtml(eyebrowLoc)}</div>` +
     `<div class="flare-popup-q">${escapeHtml(optimistic(flare.text))}</div>` +
@@ -8058,9 +8061,8 @@ function buildFlarePopup(flare) {
 
   wrap.innerHTML = html;
 
-  // Kebab → Share. Same pattern as the dot popup; one menu item for now,
-  // pattern is extensible if we add Blur/Report to flares later.
-  wireShareMenu(wrap, "flare", flare.id);
+  // Kebab → Share + Report. Same pattern as the dot popup.
+  wireActionsMenu(wrap, "flare", flare.id);
 
   // Bottom-fade visibility on the response list. Same trick used elsewhere
   // (heard panel, language picker): the fade lives on a non-scrolling
@@ -9060,6 +9062,7 @@ function buildStarPopup(star) {
     `<button class="msg-actions" type="button" aria-label="star actions" aria-haspopup="true" aria-expanded="false">${KEBAB_ICON}</button>` +
     `<div class="msg-actions-menu" role="menu">` +
       `<button type="button" class="msg-action-share" role="menuitem">Share</button>` +
+      `<button type="button" class="msg-action-report" role="menuitem">Report</button>` +
     `</div>` +
     `<div class="flare-popup-eyebrow">star · in space</div>` +
     `<div class="flare-popup-q">${escapeHtml(optimistic(star.text))}</div>` +
@@ -9102,8 +9105,8 @@ function buildStarPopup(star) {
 
   wrap.innerHTML = html;
 
-  // Kebab → Share. Same single-item menu as flare popup.
-  wireShareMenu(wrap, "star", star.id);
+  // Kebab → Share + Report. Same as flare popup.
+  wireActionsMenu(wrap, "star", star.id);
 
   // Bottom-fade on the response list, matching the flare/dot pattern.
   const respWrap = wrap.querySelector(".flare-popup-response-list-wrap");
