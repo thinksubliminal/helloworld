@@ -5197,7 +5197,7 @@ function addDotMarker(msg) {
 
     if (isMobile) {
       if (map.getZoom() < DOT_TAP_MIN_ZOOM) {
-        const targetZoom = map.getZoom() + 0.5;
+        const targetZoom = Math.max(map.getZoom() + 0.5, 3.5);
         const dotWorld = map.project([msg.lat, msg.lng], targetZoom);
         const targetCenter = map.unproject(
           L.point(dotWorld.x, dotWorld.y - size.y * 0.15),
@@ -5241,7 +5241,7 @@ function addDotMarker(msg) {
       return;
     }
 
-    const targetZoom = map.getZoom() + 0.5;
+    const targetZoom = Math.max(map.getZoom() + 0.5, 3.5);
     const dotWorld = map.project([msg.lat, msg.lng], targetZoom);
     const targetCenter = map.unproject(
       L.point(dotWorld.x, dotWorld.y - size.y * 0.10),
@@ -7642,7 +7642,7 @@ function addFlareMarker(flare) {
     // ── Mobile: existing pan-before-open behavior, unchanged. ─────
     if (isMobile) {
       if (map.getZoom() < FLARE_TAP_MIN_ZOOM) {
-        const targetZoom = map.getZoom() + 0.5;
+        const targetZoom = Math.max(map.getZoom() + 0.5, 3.5);
         const flareWorld = map.project([flare.lat, flare.lng], targetZoom);
         const targetCenter = map.unproject(
           L.point(flareWorld.x, flareWorld.y - size.y * 0.15),
@@ -7710,7 +7710,7 @@ function addFlareMarker(flare) {
     // Always zoom IN (never out) by a modest 0.5 levels. Project at
     // the target zoom so zoom + offset land in one motion (no land-
     // then-shift wobble).
-    const targetZoom = map.getZoom() + 0.5;
+    const targetZoom = Math.max(map.getZoom() + 0.5, 3.5);
     const flareWorld = map.project([flare.lat, flare.lng], targetZoom);
     const targetCenter = map.unproject(
       L.point(flareWorld.x, flareWorld.y - size.y * 0.10),
@@ -8740,7 +8740,7 @@ function addStarMarker(star) {
 
     if (isMobile) {
       if (map.getZoom() < STAR_TAP_MIN_ZOOM) {
-        const targetZoom = map.getZoom() + 0.5;
+        const targetZoom = Math.max(map.getZoom() + 0.5, 3.5);
         const starWorld = map.project([star.lat, star.lng], targetZoom);
         const targetCenter = map.unproject(
           L.point(starWorld.x, starWorld.y - size.y * 0.15),
@@ -8784,7 +8784,7 @@ function addStarMarker(star) {
       return;
     }
 
-    const targetZoom = map.getZoom() + 0.5;
+    const targetZoom = Math.max(map.getZoom() + 0.5, 3.5);
     const starWorld = map.project([star.lat, star.lng], targetZoom);
     const targetCenter = map.unproject(
       L.point(starWorld.x, starWorld.y - size.y * 0.10),
