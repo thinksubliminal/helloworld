@@ -3964,6 +3964,19 @@ function oceanFromLatLng(lat, lng) {
   return "Pacific Ocean";
 }
 
+// Project (lat, lng) to container pixels using the lng copy closest to the
+// current view center. With worldCopyJump=true Leaflet only snaps to the
+// canonical world on moveend, so during/just after a pan the canonical
+// projection of a marker can land far off-screen even though the visible
+// (wrapped) copy is mid-viewport. Click handlers use this for edge-
+// proximity threshold checks; without it, the same on-screen click can
+// look "near an edge" on one attempt and "centered" on the next.
+function visibleContainerPoint(lat, lng) {
+  const centerLng = map.getCenter().lng;
+  const visibleLng = lng + Math.round((centerLng - lng) / 360) * 360;
+  return map.latLngToContainerPoint([lat, visibleLng]);
+}
+
 // ───────────── MAP ─────────────
 // Vertical lock at near-poles, horizontal effectively unbounded so wrap still works
 const VERT_BOUND = 85.05;
@@ -5184,12 +5197,13 @@ function addDotMarker(msg) {
 
     if (isMobile) {
       if (map.getZoom() < DOT_TAP_MIN_ZOOM) {
-        const dotWorld = map.project([msg.lat, msg.lng], DOT_TAP_MIN_ZOOM);
+        const targetZoom = map.getZoom() + 0.5;
+        const dotWorld = map.project([msg.lat, msg.lng], targetZoom);
         const targetCenter = map.unproject(
           L.point(dotWorld.x, dotWorld.y - size.y * 0.15),
-          DOT_TAP_MIN_ZOOM
+          targetZoom
         );
-        map.flyTo(targetCenter, DOT_TAP_MIN_ZOOM, {
+        map.flyTo(targetCenter, targetZoom, {
           duration: 0.5,
           easeLinearity: 0.25
         });
@@ -5208,26 +5222,26 @@ function addDotMarker(msg) {
       return;
     }
 
-    const dotPoint = map.latLngToContainerPoint([msg.lat, msg.lng]);
+    const dotPoint = visibleContainerPoint(msg.lat, msg.lng);
     const TOP_EDGE_PCT = 0.25;
-    const OUTER_CORNER_PCT = 0.18;
+    const OUTER_EDGE_PCT = 0.18;
     const SEVERE_LOW_ZOOM = 3.5;
     const inTopEdge = dotPoint.y < size.y * TOP_EDGE_PCT;
-    const inOuterCorner =
-      dotPoint.x < size.x * OUTER_CORNER_PCT ||
-      dotPoint.x > size.x * (1 - OUTER_CORNER_PCT) ||
-      dotPoint.y < size.y * OUTER_CORNER_PCT ||
-      dotPoint.y > size.y * (1 - OUTER_CORNER_PCT);
+    const inOuterEdge =
+      dotPoint.x < size.x * OUTER_EDGE_PCT ||
+      dotPoint.x > size.x * (1 - OUTER_EDGE_PCT) ||
+      dotPoint.y < size.y * OUTER_EDGE_PCT ||
+      dotPoint.y > size.y * (1 - OUTER_EDGE_PCT);
     const needsZoomIn =
       (inTopEdge && map.getZoom() < DOT_TAP_MIN_ZOOM) ||
-      (inOuterCorner && map.getZoom() < SEVERE_LOW_ZOOM);
+      (inOuterEdge && map.getZoom() < SEVERE_LOW_ZOOM);
 
     if (!needsZoomIn) {
       m.openPopup();
       return;
     }
 
-    const targetZoom = Math.max(map.getZoom() + 0.5, 4);
+    const targetZoom = map.getZoom() + 0.5;
     const dotWorld = map.project([msg.lat, msg.lng], targetZoom);
     const targetCenter = map.unproject(
       L.point(dotWorld.x, dotWorld.y - size.y * 0.10),
@@ -7628,12 +7642,13 @@ function addFlareMarker(flare) {
     // ── Mobile: existing pan-before-open behavior, unchanged. ─────
     if (isMobile) {
       if (map.getZoom() < FLARE_TAP_MIN_ZOOM) {
-        const flareWorld = map.project([flare.lat, flare.lng], FLARE_TAP_MIN_ZOOM);
+        const targetZoom = map.getZoom() + 0.5;
+        const flareWorld = map.project([flare.lat, flare.lng], targetZoom);
         const targetCenter = map.unproject(
           L.point(flareWorld.x, flareWorld.y - size.y * 0.15),
-          FLARE_TAP_MIN_ZOOM
+          targetZoom
         );
-        map.flyTo(targetCenter, FLARE_TAP_MIN_ZOOM, {
+        map.flyTo(targetCenter, targetZoom, {
           duration: 0.5,
           easeLinearity: 0.25
         });
@@ -7673,30 +7688,29 @@ function addFlareMarker(flare) {
     // ── motion gentle at higher starting zooms while still       ──
     // ── giving enough vertical pan room at low zoom for the      ──
     // ── 10% offset to actually take effect.                       ──
-    const flarePoint = map.latLngToContainerPoint([flare.lat, flare.lng]);
+    const flarePoint = visibleContainerPoint(flare.lat, flare.lng);
     const TOP_EDGE_PCT = 0.25;
-    const OUTER_CORNER_PCT = 0.18;
+    const OUTER_EDGE_PCT = 0.18;
     const SEVERE_LOW_ZOOM = 3.5;
     const inTopEdge = flarePoint.y < size.y * TOP_EDGE_PCT;
-    const inOuterCorner =
-      flarePoint.x < size.x * OUTER_CORNER_PCT ||
-      flarePoint.x > size.x * (1 - OUTER_CORNER_PCT) ||
-      flarePoint.y < size.y * OUTER_CORNER_PCT ||
-      flarePoint.y > size.y * (1 - OUTER_CORNER_PCT);
+    const inOuterEdge =
+      flarePoint.x < size.x * OUTER_EDGE_PCT ||
+      flarePoint.x > size.x * (1 - OUTER_EDGE_PCT) ||
+      flarePoint.y < size.y * OUTER_EDGE_PCT ||
+      flarePoint.y > size.y * (1 - OUTER_EDGE_PCT);
     const needsZoomIn =
       (inTopEdge && map.getZoom() < FLARE_TAP_MIN_ZOOM) ||
-      (inOuterCorner && map.getZoom() < SEVERE_LOW_ZOOM);
+      (inOuterEdge && map.getZoom() < SEVERE_LOW_ZOOM);
 
     if (!needsZoomIn) {
       m.openPopup();
       return;
     }
 
-    // Always zoom IN (never out) by a modest 0.5 levels, with a
-    // floor at 4 so users at the deepest zoom-out still land
-    // somewhere a 280px popup fits. Project at the target zoom so
-    // zoom + offset land in one motion (no land-then-shift wobble).
-    const targetZoom = Math.max(map.getZoom() + 0.5, 4);
+    // Always zoom IN (never out) by a modest 0.5 levels. Project at
+    // the target zoom so zoom + offset land in one motion (no land-
+    // then-shift wobble).
+    const targetZoom = map.getZoom() + 0.5;
     const flareWorld = map.project([flare.lat, flare.lng], targetZoom);
     const targetCenter = map.unproject(
       L.point(flareWorld.x, flareWorld.y - size.y * 0.10),
@@ -8726,12 +8740,13 @@ function addStarMarker(star) {
 
     if (isMobile) {
       if (map.getZoom() < STAR_TAP_MIN_ZOOM) {
-        const starWorld = map.project([star.lat, star.lng], STAR_TAP_MIN_ZOOM);
+        const targetZoom = map.getZoom() + 0.5;
+        const starWorld = map.project([star.lat, star.lng], targetZoom);
         const targetCenter = map.unproject(
           L.point(starWorld.x, starWorld.y - size.y * 0.15),
-          STAR_TAP_MIN_ZOOM
+          targetZoom
         );
-        map.flyTo(targetCenter, STAR_TAP_MIN_ZOOM, {
+        map.flyTo(targetCenter, targetZoom, {
           duration: 0.5,
           easeLinearity: 0.25
         });
@@ -8750,26 +8765,26 @@ function addStarMarker(star) {
       return;
     }
 
-    const starPoint = map.latLngToContainerPoint([star.lat, star.lng]);
+    const starPoint = visibleContainerPoint(star.lat, star.lng);
     const TOP_EDGE_PCT = 0.25;
-    const OUTER_CORNER_PCT = 0.18;
+    const OUTER_EDGE_PCT = 0.18;
     const SEVERE_LOW_ZOOM = 3.5;
     const inTopEdge = starPoint.y < size.y * TOP_EDGE_PCT;
-    const inOuterCorner =
-      starPoint.x < size.x * OUTER_CORNER_PCT ||
-      starPoint.x > size.x * (1 - OUTER_CORNER_PCT) ||
-      starPoint.y < size.y * OUTER_CORNER_PCT ||
-      starPoint.y > size.y * (1 - OUTER_CORNER_PCT);
+    const inOuterEdge =
+      starPoint.x < size.x * OUTER_EDGE_PCT ||
+      starPoint.x > size.x * (1 - OUTER_EDGE_PCT) ||
+      starPoint.y < size.y * OUTER_EDGE_PCT ||
+      starPoint.y > size.y * (1 - OUTER_EDGE_PCT);
     const needsZoomIn =
       (inTopEdge && map.getZoom() < STAR_TAP_MIN_ZOOM) ||
-      (inOuterCorner && map.getZoom() < SEVERE_LOW_ZOOM);
+      (inOuterEdge && map.getZoom() < SEVERE_LOW_ZOOM);
 
     if (!needsZoomIn) {
       m.openPopup();
       return;
     }
 
-    const targetZoom = Math.max(map.getZoom() + 0.5, 4);
+    const targetZoom = map.getZoom() + 0.5;
     const starWorld = map.project([star.lat, star.lng], targetZoom);
     const targetCenter = map.unproject(
       L.point(starWorld.x, starWorld.y - size.y * 0.10),
