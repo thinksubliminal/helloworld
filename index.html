@@ -2022,6 +2022,8 @@
   .flare-popup-content {
     width: 240px;
     padding-bottom: 4px;
+    position: relative;
+    padding-right: 20px;
   }
   .flare-popup-eyebrow {
     font-size: 9px;
@@ -5344,6 +5346,64 @@ async function reportMessage(msgId) {
   }
 }
 
+// Copy a deep-link to a specific dot/flare/star to the clipboard. Returns
+// true on success, false on any failure — the caller surfaces feedback
+// inline in the kebab menu (same pattern Report uses). URL shape is
+// /?<kind>=<id>; the boot handler picks the param up, flyTo's the marker,
+// and opens its popup. Posts wipe at midnight UTC so links are inherently
+// same-day-only.
+async function sharePopupLink(kind, id) {
+  const url = `${location.origin}/?${kind}=${encodeURIComponent(id)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    return true;
+  } catch (e) {
+    console.warn("[share] clipboard failed:", e);
+    return false;
+  }
+}
+
+// Wire a single-item kebab → Share menu on a popup wrap. Used by flare and
+// star popups (dot popup wires its own kebab inline since it carries Blur
+// and Report too). Matches the dot pattern: open on tap, close on outside-
+// click or escape; the document listener is added via setTimeout(0) so the
+// opening tap doesn't immediately close it.
+function wireShareMenu(wrap, kind, id) {
+  const actionsBtn = wrap.querySelector(".msg-actions");
+  const menu = wrap.querySelector(".msg-actions-menu");
+  const shareBtn = wrap.querySelector(".msg-action-share");
+  if (!actionsBtn || !menu || !shareBtn) return;
+  const onDocClick = (ev) => {
+    if (!menu.contains(ev.target) && !actionsBtn.contains(ev.target)) closeMenu();
+  };
+  function closeMenu() {
+    menu.classList.remove("open");
+    actionsBtn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDocClick);
+  }
+  actionsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const isOpen = menu.classList.toggle("open");
+    actionsBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    if (isOpen) {
+      setTimeout(() => document.addEventListener("click", onDocClick), 0);
+    } else {
+      document.removeEventListener("click", onDocClick);
+    }
+  });
+  shareBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const ok = await sharePopupLink(kind, id);
+    menu.innerHTML =
+      `<div class="msg-actions-status${ok ? "" : " err"}">` +
+        (ok ? "link copied" : "couldn't copy. try again.") +
+      `</div>`;
+    setTimeout(closeMenu, 1300);
+  });
+}
+
 function buildPopup(msg) {
   const wrap = document.createElement("div");
   wrap.className = "msg-popup-wrap";
@@ -5369,6 +5429,7 @@ function buildPopup(msg) {
   wrap.innerHTML =
     `<button class="msg-actions" type="button" aria-label="message actions" aria-haspopup="true" aria-expanded="false">${KEBAB_ICON}</button>` +
     `<div class="msg-actions-menu" role="menu">` +
+      `<button type="button" class="msg-action-share" role="menuitem">Share</button>` +
       `<button type="button" class="msg-action-blur" role="menuitem">${muted ? "Unblur" : "Blur"}</button>` +
       `<button type="button" class="msg-action-report" role="menuitem">Report</button>` +
     `</div>` +
@@ -5387,6 +5448,7 @@ function buildPopup(msg) {
   const actionsBtn = wrap.querySelector(".msg-actions");
   const menu = wrap.querySelector(".msg-actions-menu");
   const blurBtn = wrap.querySelector(".msg-action-blur");
+  const shareBtn = wrap.querySelector(".msg-action-share");
   const reportBtn = wrap.querySelector(".msg-action-report");
   const textEl = wrap.querySelector(".msg-text");
   const onDocClick = (ev) => {
@@ -5418,6 +5480,18 @@ function buildPopup(msg) {
     closeMenu();
     if (typeof scheduleHeardPanelRender === "function") scheduleHeardPanelRender();
     else if (typeof renderHeardPanel === "function") renderHeardPanel();
+  });
+  shareBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const ok = await sharePopupLink("dot", msg.id);
+    // Replace the menu items with an inline confirmation so the feedback
+    // lands right where the user just tapped — mirrors the Report flow.
+    menu.innerHTML =
+      `<div class="msg-actions-status${ok ? "" : " err"}">` +
+        (ok ? "link copied" : "couldn't copy. try again.") +
+      `</div>`;
+    setTimeout(closeMenu, 1300);
   });
   reportBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -7805,6 +7879,10 @@ function buildFlarePopup(flare) {
   // for water targets and "flare · tokyo, japan" for land targets.
   const eyebrowLoc = simplifyLocation(flare.loc || flare.continent || "");
   let html =
+    `<button class="msg-actions" type="button" aria-label="flare actions" aria-haspopup="true" aria-expanded="false">${KEBAB_ICON}</button>` +
+    `<div class="msg-actions-menu" role="menu">` +
+      `<button type="button" class="msg-action-share" role="menuitem">Share</button>` +
+    `</div>` +
     `<div class="flare-popup-eyebrow">flare · ${escapeHtml(eyebrowLoc)}</div>` +
     `<div class="flare-popup-q">${escapeHtml(optimistic(flare.text))}</div>` +
     `<div class="flare-popup-meta">` +
@@ -7850,6 +7928,10 @@ function buildFlarePopup(flare) {
   }
 
   wrap.innerHTML = html;
+
+  // Kebab → Share. Same pattern as the dot popup; one menu item for now,
+  // pattern is extensible if we add Blur/Report to flares later.
+  wireShareMenu(wrap, "flare", flare.id);
 
   // Bottom-fade visibility on the response list. Same trick used elsewhere
   // (heard panel, language picker): the fade lives on a non-scrolling
@@ -8846,6 +8928,10 @@ function buildStarPopup(star) {
   };
 
   let html =
+    `<button class="msg-actions" type="button" aria-label="star actions" aria-haspopup="true" aria-expanded="false">${KEBAB_ICON}</button>` +
+    `<div class="msg-actions-menu" role="menu">` +
+      `<button type="button" class="msg-action-share" role="menuitem">Share</button>` +
+    `</div>` +
     `<div class="flare-popup-eyebrow">star · in space</div>` +
     `<div class="flare-popup-q">${escapeHtml(optimistic(star.text))}</div>` +
     `<div class="flare-popup-meta">` +
@@ -8886,6 +8972,9 @@ function buildStarPopup(star) {
   }
 
   wrap.innerHTML = html;
+
+  // Kebab → Share. Same single-item menu as flare popup.
+  wireShareMenu(wrap, "star", star.id);
 
   // Bottom-fade on the response list, matching the flare/dot pattern.
   const respWrap = wrap.querySelector(".flare-popup-response-list-wrap");
@@ -9539,6 +9628,38 @@ function refreshOpenStarPopup(starId) {
         if (!s.responses) s.responses = [];
         s.responses.push(r);
       }
+    }
+  }
+
+  // ── Deep-link handler ──
+  // /?dot=<id> / /?flare=<id> / /?star=<id> flies to that post and opens
+  // its popup once data is loaded. Strip the query string after so reload
+  // returns to the canonical view. Posts wipe at midnight UTC, so links
+  // are inherently same-day-only — missing ids surface a quiet hint.
+  const _params = new URLSearchParams(location.search);
+  const _dotId   = _params.get("dot");
+  const _flareId = _params.get("flare");
+  const _starId  = _params.get("star");
+  if (_dotId || _flareId || _starId) {
+    history.replaceState(null, "", location.pathname);
+    let target = null;
+    if (_dotId) {
+      const m = messages.find(x => x.id === _dotId);
+      if (m) target = { marker: dotMarkers.get(_dotId), lat: m.lat, lng: m.lng };
+    } else if (_flareId) {
+      const f = flares.find(x => x.id === _flareId);
+      if (f) target = { marker: flareMarkers.get(_flareId), lat: f.lat, lng: f.lng };
+    } else if (_starId) {
+      const s = stars.find(x => x.id === _starId);
+      if (s) target = { marker: starMarkers.get(_starId), lat: s.lat, lng: s.lng };
+    }
+    if (target && target.marker) {
+      const targetZoom = Math.max(map.getZoom(), 5);
+      map.flyTo([target.lat, target.lng], targetZoom, { duration: 0.8 });
+      // Match the duration above so the popup opens just after the camera settles.
+      setTimeout(() => target.marker.openPopup(), 850);
+    } else {
+      flashHint("that post is gone — posts reset daily");
     }
   }
 
