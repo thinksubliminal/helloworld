@@ -1981,6 +1981,69 @@
     overflow: visible;
   }
 
+  /* Envelope marker — a quiet "letter" the dev leaves on the map to
+     announce a new feature. Mirrors the chest/bottle wrapper pattern.
+     Unread state has a soft pale glow so it's findable but not loud;
+     once read (popup opened), the glow drops and opacity steps down
+     to "settled" — the envelope stays on the map either way. */
+  .envelope-wrap {
+    background: transparent !important;
+    border: none !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .envelope {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    position: relative;
+    opacity: 0.95;
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.45))
+            drop-shadow(0 0 8px rgba(255, 255, 255, 0.18));
+    transition: opacity 0.5s ease, filter 0.5s ease;
+  }
+  .envelope.read {
+    opacity: 0.45;
+    filter: none;
+  }
+  .envelope img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    /* SVG is solid black on a transparent background; invert so it reads
+       as soft white on the dark map. */
+    filter: invert(1);
+  }
+
+  /* Announcement popup — same dark chrome as dot/flare/star popups; eyebrow
+     uses a neutral soft white instead of mood/amber, since the note is
+     from the dev rather than a visitor. */
+  .announcement-popup {
+    width: 240px;
+    padding-bottom: 4px;
+  }
+  .announcement-eyebrow {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.55);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .announcement-title {
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 14px;
+    line-height: 1.45;
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+  .announcement-body {
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
   /* The bottle popup intentionally has NO bespoke styling. It inherits the
      same .leaflet-popup-content-wrapper / .leaflet-popup-tip /
      .leaflet-popup-content rules used by mood dot popups, and its content
@@ -6277,6 +6340,72 @@ function scheduleTreasureChestHourTick() {
   }, ms);
 }
 
+// ───────────── ENVELOPE / ANNOUNCEMENTS ─────────────
+// A quiet "letter" the dev leaves on the map to announce new features.
+// Single envelope at a fixed mid-Atlantic location, glowing softly while
+// unread, dimmed once the visitor has opened it (read state lives in
+// localStorage). To ship a new note: bump LATEST_ANNOUNCEMENT.id and
+// edit title/body — every visitor's envelope re-glows because their
+// stored "last read" id no longer matches. Set LATEST_ANNOUNCEMENT = null
+// to hide the envelope entirely.
+const LATEST_ANNOUNCEMENT = {
+  id: "2026-05-19-share",
+  title: "share what you find",
+  body: "tap the ⋮ on any dot, flare, or star and you'll find a Share option. it copies a link to your clipboard — paste it anywhere to send someone the exact post you're seeing. since dropadot resets at midnight UTC, links only work for the rest of the day."
+};
+const ENVELOPE_LOCATION = { lat: 30, lng: -40 };
+const ENVELOPE_READ_KEY = "hw-mail-last-read";
+const envelopeLayer = L.layerGroup();
+let envelopeMarker = null;
+
+function isAnnouncementRead() {
+  if (!LATEST_ANNOUNCEMENT) return true;
+  return localStorage.getItem(ENVELOPE_READ_KEY) === LATEST_ANNOUNCEMENT.id;
+}
+
+function buildAnnouncementPopup() {
+  const wrap = document.createElement("div");
+  wrap.className = "announcement-popup";
+  wrap.innerHTML =
+    `<div class="announcement-eyebrow">a note</div>` +
+    `<div class="announcement-title">${escapeHtml(LATEST_ANNOUNCEMENT.title)}</div>` +
+    `<div class="announcement-body">${escapeHtml(LATEST_ANNOUNCEMENT.body)}</div>`;
+  return wrap;
+}
+
+function placeEnvelope() {
+  if (!LATEST_ANNOUNCEMENT) return;
+  if (envelopeMarker) return;
+  const read = isAnnouncementRead();
+  const icon = L.divIcon({
+    className: "envelope-wrap",
+    html: `<div class="envelope${read ? " read" : ""}"><img src="assets/envelope.svg" alt="" /></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+  envelopeMarker = L.marker([ENVELOPE_LOCATION.lat, ENVELOPE_LOCATION.lng], {
+    icon,
+    riseOnHover: true,
+    keyboard: false
+  });
+  envelopeMarker.bindPopup(() => buildAnnouncementPopup(), {
+    closeButton: false,
+    minWidth: 240,
+    maxWidth: 280,
+    autoPan: true,
+    autoPanPadding: [20, 20],
+    keepInView: false
+  });
+  envelopeMarker.on("popupopen", () => {
+    if (!LATEST_ANNOUNCEMENT) return;
+    localStorage.setItem(ENVELOPE_READ_KEY, LATEST_ANNOUNCEMENT.id);
+    const el = envelopeMarker.getElement();
+    const inner = el && el.querySelector(".envelope");
+    if (inner) inner.classList.add("read");
+  });
+  envelopeLayer.addLayer(envelopeMarker);
+}
+
 // ───────────── HEARD AROUND THE WORLD ─────────────
 // One message per continent, up to 6 continents. Selection is RANDOM but
 // weighted toward recent messages — newer voices are more likely to be
@@ -9428,6 +9557,11 @@ function refreshOpenStarPopup(starId) {
   placeTreasureChest();
   if (!map.hasLayer(treasureChestLayer)) treasureChestLayer.addTo(map);
   scheduleTreasureChestHourTick();
+
+  // Envelope / announcement marker. Single fixed-location pin; read-state
+  // is purely client-side (localStorage), so no DB or boot fetch involved.
+  placeEnvelope();
+  if (!map.hasLayer(envelopeLayer)) envelopeLayer.addTo(map);
 
   // Country layer is heavy (~177 SVG paths). Load and render it AFTER first
   // paint so dots and UI come up immediately. Use requestIdleCallback to slot
