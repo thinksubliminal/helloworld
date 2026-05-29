@@ -32,10 +32,10 @@
 // copy-paste relationship. Keep them in sync when you change either.
 // ─────────────────────────────────────────────────────────────────────────
 
-const SUPABASE_URL = "https://sxofvadbeznwgctdzbmk.supabase.co";
+const SUPABASE_URL = "https://cxmocaockahntxitrupn.supabase.co";
 // Anon publishable key. Safe to expose — RLS protects writes; reads on
 // these tables are intentionally public.
-const SUPABASE_KEY = "sb_publishable_j9BUYILtg52cqg0-CnioZQ_iFi5Z0Yx";
+const SUPABASE_KEY = "sb_publishable_hyRsMSMiH8msgPmZijVzJw_ieVmWLob";
 
 const CACHE_TTL_S = 30;
 
